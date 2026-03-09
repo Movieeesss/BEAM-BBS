@@ -1,6 +1,6 @@
 {
-  "name": "COLUMN BBS Tool",
-  "short_name": "Doubly Reinforced Beam Tool",
+  "name": "BEAM BBS Tool",
+  "short_name": "BEAM BBS Tool",
   "description": "Professional Structural Design Tool",
   "start_url": "/",
   "display": "standalone",
