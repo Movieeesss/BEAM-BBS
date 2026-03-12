@@ -3,12 +3,11 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 /** * EXACT EXCEL REFERENCE DATA
- * weight: Bundle Weight (Columns V, W, X, Y)
- * rodsPerBundle: Rods to Bundle conversion (Columns P, Q, R, S)
+ * weight: Bundle Weight (V6, W6, X6, Y6)
+ * rods: Rods per Bundle (P6, Q6, R6, S6)
  */
-const EXCEL_REF: Record<number, { weight: number; rods: number }> = {
+const BUNDLE_REF: Record<number, { weight: number; rods: number }> = {
   8: { weight: 47.4, rods: 10 },
-  10: { weight: 51.87, rods: 7 },
   12: { weight: 53.35, rods: 5 },
   16: { weight: 56.88, rods: 3 },
   20: { weight: 59.26, rods: 2 },
@@ -16,7 +15,7 @@ const EXCEL_REF: Record<number, { weight: number; rods: number }> = {
 };
 
 const FT_TO_M = 0.3048;
-const ROD_UNIT_M = 12;
+const UNIT_LEN_M = 12;
 
 interface RodSet {
   dia1: number; num1: string;
@@ -60,6 +59,14 @@ const BeamBBS: React.FC = () => {
     }));
   }, []);
 
+  const addBeam = () => {
+    setBeams([...beams, { ...beams[0], id: Date.now().toString(), grid: `B${beams.length + 1}` }]);
+  };
+
+  const deleteBeam = (id: string) => {
+    if (beams.length > 1) setBeams(beams.filter(b => b.id !== id));
+  };
+
   const results = useMemo(() => {
     const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
     let grandConcrete = 0;
@@ -75,78 +82,84 @@ const BeamBBS: React.FC = () => {
       const vol = wM * (dM - 0.125) * lMainM;
       grandConcrete += vol;
 
-      // EXCEL LOGIC: Calculate KG for each specific cell then sum
-      const getExcelCellKg = (dia: number, nos: string, lengthM: number) => {
-        const totalM = lengthM * (parseFloat(nos) || 0); // Columns M, N, O
-        const ref = EXCEL_REF[dia];
+      // EXCEL LOGIC: KG = (Total Meters / (Rods * 12)) * Bundle Weight
+      const calcKg = (dia: number, nos: string, lengthM: number) => {
+        const totalM = lengthM * (parseFloat(nos) || 0);
+        const ref = BUNDLE_REF[dia];
         if (!ref || totalM === 0) return 0;
         
-        const bundles = totalM / (ref.rods * ROD_UNIT_M); // Columns AB, AC, AD, AE
-        const kg = bundles * ref.weight; // Columns AH, AI, AJ, AK
-        
-        summary[dia] = (summary[dia] || 0) + kg;
+        const bundles = totalM / (ref.rods * UNIT_LEN_M);
+        const kg = bundles * ref.weight;
+        summary[dia] += kg;
         return kg;
       };
 
-      const b1 = getExcelCellKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
-      const b2 = getExcelCellKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
-      const t1 = getExcelCellKg(beam.top.dia1, beam.top.num1, lMainM);
-      const t2 = getExcelCellKg(beam.top.dia2, beam.top.num2, lMainM);
-      const e1 = getExcelCellKg(beam.extra.dia1, beam.extra.num1, lExtraM);
-      const e2 = getExcelCellKg(beam.extra.dia2, beam.extra.num2, lExtraM);
+      // Calculate each part separately to match AH, AI, AJ, AK columns
+      const b1 = calcKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
+      const b2 = calcKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
+      const t1 = calcKg(beam.top.dia1, beam.top.num1, lMainM);
+      const t2 = calcKg(beam.top.dia2, beam.top.num2, lMainM);
+      const e1 = calcKg(beam.extra.dia1, beam.extra.num1, lExtraM);
+      const e2 = calcKg(beam.extra.dia2, beam.extra.num2, lExtraM);
 
-      // Stirrups: Matches Column AY (49.8 KG for 60ft)
+      // Stirrup Logic (Matches Column AY: 49.8 KG)
       const cutM = (((wM * 1000 - 80) * 2) + ((dM * 1000 - 80) * 2) + 200) / 1000;
       const qty = Math.ceil(((parseFloat(beam.lenMain) || 0) * 12) / sIn) + 1;
       const sTotalM = cutM * qty;
-      const sBundles = sTotalM / (EXCEL_REF[beam.diaStirrups].rods * ROD_UNIT_M);
-      const sKg = sBundles * EXCEL_REF[beam.diaStirrups].weight;
+      const sBundles = sTotalM / (BUNDLE_REF[beam.diaStirrups].rods * UNIT_LEN_M);
+      const sKg = sBundles * BUNDLE_REF[beam.diaStirrups].weight;
       summary[beam.diaStirrups] += sKg;
 
-      return { ...beam, vol, totalKg: b1+b2+t1+t2+e1+e2+sKg };
+      return { ...beam, vol, totalBeamKg: b1+b2+t1+t2+e1+e2+sKg };
     });
 
     return { detailed, summary, grandConcrete };
-  }, [beams]);
+  }, [beams, method = 'excel']);
 
   return (
-    <div style={{ backgroundColor: '#f4f7f9', minHeight: '100vh', padding: '15px' }}>
-      <header style={{ backgroundColor: '#1565c0', color: '#fff', padding: '15px', borderRadius: '10px', textAlign: 'center', marginBottom: '15px' }}>
-        <h2 style={{ margin: 0 }}>BEAM BBS CODING</h2>
+    <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'sans-serif' }}>
+      <header style={{ backgroundColor: '#1565c0', color: '#fff', padding: '18px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
+        <h2 style={{ margin: 0 }}>BEAM BBS</h2>
       </header>
 
       {beams.map(beam => (
-        <div key={beam.id} style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '15px', marginBottom: '15px', border: '1px solid #ddd' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <input value={beam.grid} onChange={e => updateBeam(beam.id, 'grid', e.target.value)} style={{ fontWeight: 'bold', border: 'none', color: '#1565c0', fontSize: '18px' }} />
+        <div key={beam.id} style={{ backgroundColor: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
+            <input value={beam.grid} onChange={e => updateBeam(beam.id, 'grid', e.target.value)} style={{ fontWeight: 'bold', border: 'none', color: '#1565c0', fontSize: '18px', width: '100px' }} />
+            <button onClick={() => deleteBeam(beam.id)} style={{ background: '#f44336', color: '#fff', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer' }}>×</button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
-            <Box label="Width" value={beam.width} onChange={v => updateBeam(beam.id, 'width', v)} />
-            <Box label="Depth" value={beam.depth} onChange={v => updateBeam(beam.id, 'depth', v)} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '15px' }}>
+            <Box label="Width(mm)" value={beam.width} onChange={v => updateBeam(beam.id, 'width', v)} />
+            <Box label="Depth(mm)" value={beam.depth} onChange={v => updateBeam(beam.id, 'depth', v)} />
             <Box label="Main Len(ft)" value={beam.lenMain} onChange={v => updateBeam(beam.id, 'lenMain', v)} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <RodRow label="Bottom" rod={beam.bottom} onUpdate={(f,v) => updateBeam(beam.id, `bottom.${f}`, v)} />
             <RodRow label="Top" rod={beam.top} onUpdate={(f,v) => updateBeam(beam.id, `top.${f}`, v)} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
             <RodRow label="Extra" rod={beam.extra} onUpdate={(f,v) => updateBeam(beam.id, `extra.${f}`, v)} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
-              <Box label="Stirrup Spacing" value={beam.spacing} onChange={v => updateBeam(beam.id, 'spacing', v)} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+               <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
+               <Box label="Stirrup Spacing" value={beam.spacing} onChange={v => updateBeam(beam.id, 'spacing', v)} />
             </div>
           </div>
         </div>
       ))}
 
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <button onClick={addBeam} style={{ flex: 1, padding: '15px', backgroundColor: '#4caf50', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>+ ADD BEAM</button>
+      </div>
+
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '15px', border: '2px solid #1565c0' }}>
-        <h3 style={{ marginTop: 0, textAlign: 'center' }}>PROJECT TOTALS</h3>
-        <p>Total Concrete: <strong>{results.grandConcrete.toFixed(3)} m³</strong></p>
+        <h3 style={{ marginTop: 0, textAlign: 'center' }}>PROJECT TOTALS (EXCEL SYNC)</h3>
+        <p style={{ display: 'flex', justifyContent: 'space-between' }}>Total Concrete: <strong>{results.detailed[0].vol.toFixed(3)} m³</strong></p>
+        <hr style={{ border: '0.5px solid #eee' }} />
         {Object.entries(results.summary).map(([dia, kg]) => kg > 0 && (
-          <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', padding: '5px 0' }}>
+          <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f9f9f9' }}>
             <span>{dia}mm Steel:</span> <strong>{kg.toFixed(2)} KG</strong>
           </div>
         ))}
@@ -156,8 +169,8 @@ const BeamBBS: React.FC = () => {
 };
 
 const Box = ({ label, value, onChange }: any) => (
-  <div style={{ backgroundColor: '#e3f2fd', padding: '5px', borderRadius: '6px' }}>
-    <label style={{ fontSize: '9px', fontWeight: 'bold', display: 'block', color: '#1565c0' }}>{label}</label>
+  <div style={{ backgroundColor: '#e3f2fd', padding: '8px', borderRadius: '8px' }}>
+    <label style={{ fontSize: '10px', color: '#1565c0', display: 'block', fontWeight: 'bold' }}>{label}</label>
     <input type="number" value={value} onChange={e => onChange(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', outline: 'none' }} />
   </div>
 );
@@ -165,14 +178,14 @@ const Box = ({ label, value, onChange }: any) => (
 const RodRow = ({ label, rod, onUpdate }: any) => {
   const active = (n: any) => (parseFloat(n) || 0) > 0;
   return (
-    <div style={{ border: '1px solid #eee', padding: '5px', borderRadius: '6px' }}>
-      <span style={{ fontSize: '10px', fontWeight: 'bold' }}>{label}</span>
-      <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-        <input type="number" value={rod.dia1} onChange={e => onUpdate('dia1', e.target.value)} style={{ width: '50%', background: active(rod.num1) ? '#bbdefb' : '#f5f5f5', border: 'none', borderRadius: '4px', textAlign: 'center' }} />
+    <div style={{ border: '1px solid #eee', padding: '8px', borderRadius: '8px' }}>
+      <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#444' }}>{label}</span>
+      <div style={{ display: 'flex', gap: '5px', marginTop: '6px' }}>
+        <input type="number" value={rod.dia1} onChange={e => onUpdate('dia1', e.target.value)} style={{ width: '50%', background: active(rod.num1) ? '#bbdefb' : '#f5f5f5', border: 'none', borderRadius: '4px', textAlign: 'center', padding: '4px' }} />
         <input type="number" value={rod.num1} onChange={e => onUpdate('num1', e.target.value)} style={{ width: '50%', background: active(rod.num1) ? '#64b5f6' : '#eee', border: 'none', borderRadius: '4px', textAlign: 'center', color: active(rod.num1) ? '#fff' : '#000' }} />
       </div>
-      <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-        <input type="number" value={rod.dia2} onChange={e => onUpdate('dia2', e.target.value)} style={{ width: '50%', background: active(rod.num2) ? '#bbdefb' : '#f5f5f5', border: 'none', borderRadius: '4px', textAlign: 'center' }} />
+      <div style={{ display: 'flex', gap: '5px', marginTop: '5px' }}>
+        <input type="number" value={rod.dia2} onChange={e => onUpdate('dia2', e.target.value)} style={{ width: '50%', background: active(rod.num2) ? '#bbdefb' : '#f5f5f5', border: 'none', borderRadius: '4px', textAlign: 'center', padding: '4px' }} />
         <input type="number" value={rod.num2} onChange={e => onUpdate('num2', e.target.value)} style={{ width: '50%', background: active(rod.num2) ? '#64b5f6' : '#eee', border: 'none', borderRadius: '4px', textAlign: 'center', color: active(rod.num2) ? '#fff' : '#000' }} />
       </div>
     </div>
