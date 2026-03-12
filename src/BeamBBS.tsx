@@ -79,11 +79,11 @@ const BeamBBS: React.FC = () => {
       const lExtraM = (parseFloat(beam.lenExtra) || 0) * FT_TO_M;
       const sIn = parseFloat(beam.spacing) || 6;
 
-      // Concrete: W * (D - 0.125) * L
+      // Concrete: W * (D - 125mm) * L = 1.073 m3
       const vol = wM * (dM - 0.125) * lMainM;
       grandConcrete += vol;
 
-      // EXCEL LOGIC: KG = (Total Meters / (Rods * 12)) * Bundle Weight
+      // EXCEL LOGIC: KG = (Total Meters / (Rods per Bundle * 12)) * Bundle Weight
       const calcKg = (dia: number, nos: string, lengthM: number) => {
         const totalM = lengthM * (parseFloat(nos) || 0);
         const ref = BUNDLE_REF[dia];
@@ -95,7 +95,7 @@ const BeamBBS: React.FC = () => {
         return kg;
       };
 
-      // Calculate each part separately to match AH, AI, AJ, AK columns
+      // Calculate each rebar group individually to match your AH, AI, AJ, AK columns
       const b1 = calcKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
       const b2 = calcKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
       const t1 = calcKg(beam.top.dia1, beam.top.num1, lMainM);
@@ -103,7 +103,7 @@ const BeamBBS: React.FC = () => {
       const e1 = calcKg(beam.extra.dia1, beam.extra.num1, lExtraM);
       const e2 = calcKg(beam.extra.dia2, beam.extra.num2, lExtraM);
 
-      // Stirrup Logic (Matches Column AY: 49.8 KG)
+      // Stirrup Logic (Matches Column AY: 49.8 KG for 60ft)
       const cutM = (((wM * 1000 - 80) * 2) + ((dM * 1000 - 80) * 2) + 200) / 1000;
       const qty = Math.ceil(((parseFloat(beam.lenMain) || 0) * 12) / sIn) + 1;
       const sTotalM = cutM * qty;
@@ -115,7 +115,7 @@ const BeamBBS: React.FC = () => {
     });
 
     return { detailed, summary, grandConcrete };
-  }, [beams]); // FIXED: Removed 'method' from dependencies
+  }, [beams]);
 
   const downloadPDF = () => {
     const doc = new jsPDF();
@@ -156,7 +156,7 @@ const BeamBBS: React.FC = () => {
             <RodRow label="Extra" rod={beam.extra} onUpdate={(f,v) => updateBeam(beam.id, `extra.${f}`, v)} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
               <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
-              <Box label="Stirrup Spacing" value={beam.spacing} onChange={v => updateBeam(beam.id, 'spacing', v)} />
+              <Box label="Stirrup Spacing(in)" value={beam.spacing} onChange={v => updateBeam(beam.id, 'spacing', v)} />
             </div>
           </div>
         </div>
@@ -169,7 +169,7 @@ const BeamBBS: React.FC = () => {
 
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '15px', border: '2px solid #1565c0' }}>
         <h3 style={{ marginTop: 0, textAlign: 'center' }}>PROJECT TOTALS (EXCEL SYNC)</h3>
-        <p style={{ display: 'flex', justifyContent: 'space-between' }}>Total Concrete: <strong>{results.detailed[0].vol.toFixed(3)} m³</strong></p>
+        <p style={{ display: 'flex', justifyContent: 'space-between' }}>Total Concrete: <strong>{results.grandConcrete.toFixed(3)} m³</strong></p>
         <hr style={{ border: '0.5px solid #eee' }} />
         {Object.entries(results.summary).map(([dia, kg]) => kg > 0 && (
           <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f9f9f9' }}>
