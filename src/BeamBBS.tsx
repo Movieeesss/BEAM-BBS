@@ -8,6 +8,7 @@ import autoTable from 'jspdf-autotable';
  */
 const BUNDLE_REF: Record<number, { weight: number; rods: number }> = {
   8: { weight: 47.4, rods: 10 },
+  10: { weight: 51.87, rods: 7 },
   12: { weight: 53.35, rods: 5 },
   16: { weight: 56.88, rods: 3 },
   20: { weight: 59.26, rods: 2 },
@@ -90,7 +91,7 @@ const BeamBBS: React.FC = () => {
         
         const bundles = totalM / (ref.rods * UNIT_LEN_M);
         const kg = bundles * ref.weight;
-        summary[dia] += kg;
+        summary[dia] = (summary[dia] || 0) + kg;
         return kg;
       };
 
@@ -114,7 +115,18 @@ const BeamBBS: React.FC = () => {
     });
 
     return { detailed, summary, grandConcrete };
-  }, [beams, method = 'excel']);
+  }, [beams]); // FIXED: Removed 'method' from dependencies
+
+  const downloadPDF = () => {
+    const doc = new jsPDF();
+    doc.text("BEAM BBS REPORT", 105, 15, { align: "center" });
+    autoTable(doc, {
+      startY: 25,
+      head: [['Grid', 'Size', 'Length', 'Concrete', 'Total Steel']],
+      body: results.detailed.map(b => [b.grid, `${b.width}x${b.depth}`, b.lenMain, b.vol.toFixed(3), b.totalBeamKg.toFixed(2)]),
+    });
+    doc.save("Beam_BBS.pdf");
+  };
 
   return (
     <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'sans-serif' }}>
@@ -143,8 +155,8 @@ const BeamBBS: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
             <RodRow label="Extra" rod={beam.extra} onUpdate={(f,v) => updateBeam(beam.id, `extra.${f}`, v)} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-               <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
-               <Box label="Stirrup Spacing" value={beam.spacing} onChange={v => updateBeam(beam.id, 'spacing', v)} />
+              <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
+              <Box label="Stirrup Spacing" value={beam.spacing} onChange={v => updateBeam(beam.id, 'spacing', v)} />
             </div>
           </div>
         </div>
@@ -152,6 +164,7 @@ const BeamBBS: React.FC = () => {
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button onClick={addBeam} style={{ flex: 1, padding: '15px', backgroundColor: '#4caf50', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>+ ADD BEAM</button>
+        <button onClick={downloadPDF} style={{ flex: 1, padding: '15px', backgroundColor: '#212121', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>DOWNLOAD PDF</button>
       </div>
 
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '15px', border: '2px solid #1565c0' }}>
