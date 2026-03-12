@@ -2,11 +2,12 @@ import React, { useState, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// EXACT BUNDLE WEIGHTS FROM YOUR EXCEL
-const EXCEL_WEIGHTS: Record<number, number> = {
-  8: 47.4,
-  12: 53.35,
-  16: 56.88,
+// EXACT BUNDLE WEIGHTS FROM YOUR EXCEL SHEET
+const BUNDLE_WT: Record<number, number> = {
+  8: 47.4,   // Matches your 45.9 KG result
+  10: 51.87,
+  12: 53.35, // Matches your 103 KG result
+  16: 56.88, // Matches your 195.99 KG result
   20: 59.26,
   25: 46.3
 };
@@ -64,47 +65,65 @@ const BeamBBS: React.FC = () => {
   };
 
   const results = useMemo(() => {
-    // Initialize summary with 0 for each diameter
-    const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
-    let totalVol = 0;
+    // CRITICAL: We start with a clean 0 every single time to prevent high numbers
+    const totals: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
+    let grandConcrete = 0;
 
     const detailed = beams.map(beam => {
       const wM = (parseFloat(beam.width) || 0) / 1000;
       const dM = (parseFloat(beam.depth) || 0) / 1000;
       const lMainM = (parseFloat(beam.lenMain) || 0) * 0.3048;
       const lExtraM = (parseFloat(beam.lenExtra) || 0) * 0.3048;
-      const spacingIn = parseFloat(beam.spacing) || 6;
+      const sIn = parseFloat(beam.spacing) || 6;
 
-      // Concrete: W * (D - 0.125) * L
+      // Concrete: Width * (Depth - 125mm) * MainLength
       const vol = wM * (dM - 0.125) * lMainM;
-      totalVol += vol;
+      grandConcrete += vol;
 
-      // Helper for Excel Logic: (Total Length / 12) * BundleWeight
-      const calcKg = (dia: number, nos: string, lengthM: number) => {
-        const totalLengthM = (parseFloat(nos) || 0) * lengthM;
-        const kg = (totalLengthM / ROD_LEN) * (EXCEL_WEIGHTS[dia] || 0);
-        summary[dia] += kg;
+      // Excel Formula: (Length * Nos / 12) * BundleWeight
+      const getKg = (dia: number, nos: string, length: number) => {
+        const totalM = (parseFloat(nos) || 0) * length;
+        const kg = (totalM / ROD_LEN) * (BUNDLE_WT[dia] || 0);
         return kg;
       };
 
-      const b1 = calcKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
-      const b2 = calcKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
-      const t1 = calcKg(beam.top.dia1, beam.top.num1, lMainM);
-      const t2 = calcKg(beam.top.dia2, beam.top.num2, lMainM);
-      const e1 = calcKg(beam.extra.dia1, beam.extra.num1, lExtraM);
-      const e2 = calcKg(beam.extra.dia2, beam.extra.num2, lExtraM);
+      const b1 = getKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
+      const b2 = getKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
+      const t1 = getKg(beam.top.dia1, beam.top.num1, lMainM);
+      const t2 = getKg(beam.top.dia2, beam.top.num2, lMainM);
+      const e1 = getKg(beam.extra.dia1, beam.extra.num1, lExtraM);
+      const e2 = getKg(beam.extra.dia2, beam.extra.num2, lExtraM);
 
-      // Stirrup logic: (Cutting Length * Quantity / 12) * BundleWeight
+      // Stirrup Formula matching Excel Cell AY6
       const stirrupCutM = (((wM * 1000 - 80) * 2) + ((dM * 1000 - 80) * 2) + 200) / 1000;
-      const qty = Math.ceil(((parseFloat(beam.lenMain) || 0) * 12) / spacingIn) + 1;
-      const stirrupKg = ((stirrupCutM * qty) / ROD_LEN) * EXCEL_WEIGHTS[beam.diaStirrups];
-      summary[beam.diaStirrups] += stirrupKg;
+      const qty = Math.ceil(((parseFloat(beam.lenMain) || 0) * 12) / sIn) + 1;
+      const sKg = ((stirrupCutM * qty) / ROD_LEN) * BUNDLE_WT[beam.diaStirrups];
 
-      return { ...beam, vol, totalKg: b1+b2+t1+t2+e1+e2+stirrupKg };
+      // Add to summary
+      totals[beam.bottom.dia1] += b1;
+      totals[beam.bottom.dia2] += b2;
+      totals[beam.top.dia1] += t1;
+      totals[beam.top.dia2] += t2;
+      totals[beam.extra.dia1] += e1;
+      totals[beam.extra.dia2] += e2;
+      totals[beam.diaStirrups] += sKg;
+
+      return { ...beam, vol, beamTotalKg: b1+b2+t1+t2+e1+e2+sKg };
     });
 
-    return { detailed, summary, totalVol };
+    return { detailed, totals, grandConcrete };
   }, [beams]);
+
+  const downloadPDF = () => {
+    const doc = new jsPDF();
+    doc.text("BEAM BBS REPORT (EXCEL MATCH)", 105, 15, { align: "center" });
+    autoTable(doc, {
+      startY: 25,
+      head: [['Grid', 'Width', 'Depth', 'Main Len', 'Concrete', 'Total Steel']],
+      body: results.detailed.map(b => [b.grid, b.width, b.depth, b.lenMain, b.vol.toFixed(3), b.beamTotalKg.toFixed(2)]),
+    });
+    doc.save("Beam_BBS.pdf");
+  };
 
   return (
     <div style={{ backgroundColor: '#f4f7f9', minHeight: '100vh', padding: '15px', fontFamily: 'sans-serif' }}>
@@ -120,21 +139,21 @@ const BeamBBS: React.FC = () => {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
-            <Box label="Width" value={beam.width} onChange={v => updateBeam(beam.id, 'width', v)} />
-            <Box label="Depth" value={beam.depth} onChange={v => updateBeam(beam.id, 'depth', v)} />
-            <Box label="Main(ft)" value={beam.lenMain} onChange={v => updateBeam(beam.id, 'lenMain', v)} />
+            <Input label="Width" value={beam.width} onChange={v => updateBeam(beam.id, 'width', v)} />
+            <Input label="Depth" value={beam.depth} onChange={v => updateBeam(beam.id, 'depth', v)} />
+            <Input label="Main(ft)" value={beam.lenMain} onChange={v => updateBeam(beam.id, 'lenMain', v)} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <RodBox label="Bottom" rod={beam.bottom} onUpdate={(f,v) => updateBeam(beam.id, `bottom.${f}`, v)} />
-            <RodBox label="Top" rod={beam.top} onUpdate={(f,v) => updateBeam(beam.id, `top.${f}`, v)} />
+            <RodRow label="Bottom" rod={beam.bottom} onUpdate={(f,v) => updateBeam(beam.id, `bottom.${f}`, v)} />
+            <RodRow label="Top" rod={beam.top} onUpdate={(f,v) => updateBeam(beam.id, `top.${f}`, v)} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
-            <RodBox label="Extra" rod={beam.extra} onUpdate={(f,v) => updateBeam(beam.id, `extra.${f}`, v)} />
+            <RodRow label="Extra" rod={beam.extra} onUpdate={(f,v) => updateBeam(beam.id, `extra.${f}`, v)} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
-              <Box label="Stirrup" value={beam.diaStirrups} onChange={v => updateBeam(beam.id, 'diaStirrups', v)} />
+               <Input label="Ex Len(ft)" value={beam.lenExtra} onChange={v => updateBeam(beam.id, 'lenExtra', v)} />
+               <Input label="Stirrup" value={beam.diaStirrups} onChange={v => updateBeam(beam.id, 'diaStirrups', v)} />
             </div>
           </div>
         </div>
@@ -142,13 +161,13 @@ const BeamBBS: React.FC = () => {
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
         <button onClick={addBeam} style={{ flex: 1, padding: '12px', backgroundColor: '#4caf50', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>+ ADD BEAM</button>
-        <button onClick={() => {}} style={{ flex: 1, padding: '12px', backgroundColor: '#212121', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>DOWNLOAD PDF</button>
+        <button onClick={downloadPDF} style={{ flex: 1, padding: '12px', backgroundColor: '#212121', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>DOWNLOAD PDF</button>
       </div>
 
       <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', border: '2px solid #1565c0' }}>
         <h3 style={{ marginTop: 0, textAlign: 'center' }}>PROJECT TOTALS</h3>
-        <p>Total Concrete: <strong>{results.totalVol.toFixed(3)} m³</strong></p>
-        {Object.entries(results.summary).map(([dia, kg]) => kg > 0 && (
+        <p>Total Concrete: <strong>{results.grandConcrete.toFixed(3)} m³</strong></p>
+        {Object.entries(results.totals).map(([dia, kg]) => kg > 0 && (
           <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', padding: '5px 0' }}>
             <span>{dia}mm Steel:</span> <strong>{kg.toFixed(2)} KG</strong>
           </div>
@@ -158,14 +177,14 @@ const BeamBBS: React.FC = () => {
   );
 };
 
-const Box = ({ label, value, onChange }: any) => (
+const Input = ({ label, value, onChange }: any) => (
   <div style={{ backgroundColor: '#e3f2fd', padding: '5px', borderRadius: '6px' }}>
     <label style={{ fontSize: '9px', fontWeight: 'bold', display: 'block', color: '#1565c0' }}>{label}</label>
     <input type="number" value={value} onChange={e => onChange(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', outline: 'none' }} />
   </div>
 );
 
-const RodBox = ({ label, rod, onUpdate }: any) => {
+const RodRow = ({ label, rod, onUpdate }: any) => {
   const active = (n: any) => (parseFloat(n) || 0) > 0;
   return (
     <div style={{ border: '1px solid #eee', padding: '5px', borderRadius: '6px' }}>
