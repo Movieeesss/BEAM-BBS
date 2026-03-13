@@ -11,7 +11,7 @@ const GET_BUNDLE_WEIGHT = (dia: number) => {
   return map[dia] || 0;
 };
 
-// EXCEL CONSTANTS FROM YOUR SHEET
+// EXCEL CONSTANTS
 const EXCEL_FT_TO_M_DIVIDER = 3.281;
 const ROD_UNIT_LEN = 12;
 
@@ -54,44 +54,40 @@ const BeamBBS: React.FC = () => {
       const wM = (parseFloat(beam.width) || 0) / 1000;
       const dM = (parseFloat(beam.depth) || 0) / 1000;
 
-      // Concrete: W * D * L
       grandConcrete += (wM * dM * lMainM);
 
-      // THE CORE EXCEL FORMULA: ( (LengthM * Nos) / (RodsPerBundle * 12) ) * BundleWeight
-      const calculateExcelKg = (dia: number, nosStr: string, lengthM: number) => {
+      // EXCEL LOGIC: Calculate weight for one specific entry
+      const calcSingleEntryKg = (dia: number, nosStr: string, lengthM: number) => {
         const nos = parseFloat(nosStr) || 0;
         if (nos === 0 || dia === 0) return 0;
-        
         const rodsPerBundle = GET_RODS_PER_BUNDLE(dia);
         const bundleWeight = GET_BUNDLE_WEIGHT(dia);
-        
-        // Exact bundle math per entry
-        const requiredBundles = (lengthM * nos) / (rodsPerBundle * ROD_UNIT_LEN);
-        return requiredBundles * bundleWeight;
+        // (Length * Nos) / (RodsPerBundle * 12) * BundleWeight
+        return ((lengthM * nos) / (rodsPerBundle * ROD_UNIT_LEN)) * bundleWeight;
       };
 
-      // CALCULATE EACH ENTRY INDIVIDUALLY TO PREVENT LOGIC MISTAKES
-      // This sums up 16mm from all three zones exactly like your Excel sheet
-      summary[16] += calculateExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
-      summary[16] += calculateExcelKg(beam.top.dia1, beam.top.num1, lMainM);
-      summary[16] += calculateExcelKg(beam.extra.dia1, beam.extra.num1, lExtraM);
+      // 16mm - Calculate separately per entry to match Excel sum
+      summary[16] += calcSingleEntryKg(beam.bottom.dia1, beam.bottom.num1, lMainM); // 28.44
+      summary[16] += calcSingleEntryKg(beam.top.dia1, beam.top.num1, lMainM);       // 28.44
+      summary[16] += calcSingleEntryKg(beam.extra.dia1, beam.extra.num1, lExtraM);    // 28.44
+      // Total 16mm will be 85.32 for Main 60ft/Extra 60ft or 142.22 depending on inputs.
 
-      // This sums up 12mm from all three zones
-      summary[12] += calculateExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
-      summary[12] += calculateExcelKg(beam.top.dia2, beam.top.num2, lMainM);
-      summary[12] += calculateExcelKg(beam.extra.dia2, beam.extra.num2, lExtraM);
+      // 12mm - Calculate separately per entry to match Excel sum
+      summary[12] += calcSingleEntryKg(beam.bottom.dia2, beam.bottom.num2, lMainM); // 16.27
+      summary[12] += calcSingleEntryKg(beam.top.dia2, beam.top.num2, lMainM);       // 16.27
+      summary[12] += calcSingleEntryKg(beam.extra.dia2, beam.extra.num2, lExtraM);    // 8.13
+      // Total 12mm = 16.27 + 16.27 + 8.13 = 40.67 (for 60ft/30ft inputs)
 
       // Stirrups (8mm)
       const stirrupQty = Math.floor(((parseFloat(beam.lenMain) || 0) * 12) / (parseFloat(beam.spacing) || 6)) + 1;
-      const stirrupCutM = 3.5 / EXCEL_FT_TO_M_DIVIDER; 
-      summary[8] += calculateExcelKg(8, stirrupQty.toString(), stirrupCutM);
+      summary[8] += calcSingleEntryKg(8, stirrupQty.toString(), 3.5 / EXCEL_FT_TO_M_DIVIDER);
     });
 
     return { summary, grandConcrete };
   }, [beams]);
 
   return (
-    <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'Arial' }}>
       <header style={{ backgroundColor: '#1565c0', color: '#fff', padding: '15px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0 }}>BEAM BBS</h2>
       </header>
@@ -137,7 +133,7 @@ const BeamBBS: React.FC = () => {
 
 const Box = ({ label, value, onChange }: any) => (
   <div style={{ backgroundColor: '#e3f2fd', padding: '10px', borderRadius: '8px' }}>
-    <label style={{ fontSize: '11px', color: '#1565c0', display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>{label}</label>
+    <label style={{ fontSize: '11px', color: '#1565c0', display: 'block', fontWeight: 'bold' }}>{label}</label>
     <input type="number" value={value} onChange={e => onChange(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', fontSize: '16px', outline: 'none' }} />
   </div>
 );
