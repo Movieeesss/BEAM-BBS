@@ -24,7 +24,7 @@ interface Beam {
 }
 
 const BeamBBS = () => {
-  const [beams, setBeams] = useState<Beam[]>([createEmptyBeam(Date.now())]);
+  const [beams, setBeams] = useState<Beam[]>([createEmptyBeam(1)]);
 
   function createEmptyBeam(id: number): Beam {
     return {
@@ -49,41 +49,48 @@ const BeamBBS = () => {
     }));
   };
 
-  const totals = useMemo(() => {
+  // --- CALCULATION ENGINE WITH 6-ZONE BREAKDOWN ---
+  const results = useMemo(() => {
     const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
-
-    beams.forEach(b => {
+    
+    const beamDetails = beams.map(b => {
       const L_Main = (parseFloat(b.mainFt) || 0) / DIVIDER;
       const L_Ex = (parseFloat(b.exFt) || 0) / DIVIDER;
 
-      // --- YOUR EXCEL SEPARATION LOGIC ---
       const calcKg = (dia: number, nos: string, lenM: number) => {
         const n = parseFloat(nos) || 0;
         if (n === 0 || !BUNDLE_DATA[dia]) return 0;
         const config = BUNDLE_DATA[dia];
-        // AB-AG: Required Bundles then AH-AM: KG
         return ((lenM * n) / (config.rods * ROD_LEN)) * config.weight;
       };
 
-      // Independent summation per box
-      summary[b.bottom1.dia] += calcKg(b.bottom1.dia, b.bottom1.nos, L_Main);
-      summary[b.bottom2.dia] += calcKg(b.bottom2.dia, b.bottom2.nos, L_Main);
-      summary[b.top1.dia]    += calcKg(b.top1.dia,    b.top1.nos,    L_Main);
-      summary[b.top2.dia]    += calcKg(b.top2.dia,    b.top2.nos,    L_Main);
-      summary[b.ex1.dia]     += calcKg(b.ex1.dia,     b.ex1.nos,     L_Main); 
-      summary[b.ex2.dia]     += calcKg(b.ex2.dia,     b.ex2.nos,     L_Ex);
+      // INDIVIDUAL ZONE CALCULATIONS (AH - AM)
+      const z1 = calcKg(b.bottom1.dia, b.bottom1.nos, L_Main);
+      const z2 = calcKg(b.bottom2.dia, b.bottom2.nos, L_Main);
+      const z3 = calcKg(b.top1.dia, b.top1.nos, L_Main);
+      const z4 = calcKg(b.top2.dia, b.top2.nos, L_Main);
+      const z5 = calcKg(b.ex1.dia, b.ex1.nos, L_Main);
+      const z6 = calcKg(b.ex2.dia, b.ex2.nos, L_Ex);
+
+      // Add to final totals
+      [z1, z3, z5].forEach((val, i) => { summary[[b.bottom1.dia, b.top1.dia, b.ex1.dia][i]] += val; });
+      [z2, z4, z6].forEach((val, i) => { summary[[b.bottom2.dia, b.top2.dia, b.ex2.dia][i]] += val; });
 
       const stirrupQty = Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
-      summary[8] += calcKg(8, stirrupQty.toString(), 3.5 / DIVIDER);
+      const stirrupKg = calcKg(8, stirrupQty.toString(), 3.5 / DIVIDER);
+      summary[8] += stirrupKg;
+
+      return { ...b, z1, z2, z3, z4, z5, z6, stirrupKg };
     });
-    return summary;
+
+    return { beamDetails, summary };
   }, [beams]);
 
   return (
     <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'Arial' }}>
-      <div style={{ backgroundColor: '#1565c0', color: 'white', padding: '15px', borderRadius: '10px', textAlign: 'center', fontWeight: 'bold', marginBottom: '15px' }}>BEAM BBS - EXCEL MATCH</div>
+      <div style={{ backgroundColor: '#1565c0', color: 'white', padding: '15px', borderRadius: '10px', textAlign: 'center', fontWeight: 'bold', marginBottom: '15px' }}>BEAM BBS - 6 ZONE EXCEL MATCH</div>
       
-      {beams.map(b => (
+      {results.beamDetails.map(b => (
         <div key={b.id} style={{ backgroundColor: 'white', borderRadius: '15px', padding: '15px', marginBottom: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '15px' }}>
              <Input label="W(mm)" val={b.w} set={v => updateBeam(b.id, 'w', v)} />
@@ -95,17 +102,28 @@ const BeamBBS = () => {
           <Section label="Top" entry1={b.top1} entry2={b.top2} set1={(f, v) => updateBeam(b.id, `top1.${f}`, v)} set2={(f, v) => updateBeam(b.id, `top2.${f}`, v)} />
           <Section label="Extra" entry1={b.ex1} entry2={b.ex2} set1={(f, v) => updateBeam(b.id, `ex1.${f}`, v)} set2={(f, v) => updateBeam(b.id, `ex2.${f}`, v)} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '15px' }}>
              <Input label="Ex Len(ft)" val={b.exFt} set={v => updateBeam(b.id, 'exFt', v)} />
              <Input label="Spacing(in)" val={b.spacing} set={v => updateBeam(b.id, 'spacing', v)} />
+          </div>
+
+          {/* --- 6 ZONE BREAKDOWN VIEW --- */}
+          <div style={{ backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '10px', fontSize: '11px', border: '1px solid #ddd' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '5px', color: '#1565c0' }}>EXCEL COLUMN BREAKDOWN (KG):</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
+              <span>Btm Rods: {b.z1.toFixed(2)} | {b.z2.toFixed(2)}</span>
+              <span>Top Rods: {b.z3.toFixed(2)} | {b.z4.toFixed(2)}</span>
+              <span>Extra Rods: {b.z5.toFixed(2)} | {b.z6.toFixed(2)}</span>
+              <span>Stirrups: {b.stirrupKg.toFixed(2)}</span>
+            </div>
           </div>
         </div>
       ))}
 
       <div style={{ backgroundColor: 'white', borderRadius: '15px', padding: '20px', border: '2px solid #1565c0' }}>
          <h3 style={{ margin: '0 0 15px 0', textAlign: 'center', color: '#1565c0' }}>PROJECT TOTALS</h3>
-         {Object.entries(totals).map(([dia, kg]) => (kg > 0) && (
-           <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+         {Object.entries(results.summary).map(([dia, kg]) => (kg > 0) && (
+           <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #eee' }}>
              <span>{dia}mm Steel:</span> <strong>{kg.toFixed(2)} KG</strong>
            </div>
          ))}
@@ -126,16 +144,14 @@ const Section = ({ label, entry1, entry2, set1, set2 }: any) => {
   return (
     <div style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px', marginBottom: '10px' }}>
       <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>{label}</div>
-      {/* Entry 1 Row */}
       <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-        <select value={entry1.dia} onChange={e => set1('dia', parseInt(e.target.value))} style={{ width: '50%', padding: '8px', borderRadius: '5px', border: '1px solid #ddd', backgroundColor: '#f0f4f8' }}>
+        <select value={entry1.dia} onChange={e => set1('dia', parseInt(e.target.value))} style={{ width: '50%', padding: '8px', borderRadius: '5px', border: '1px solid #ddd' }}>
           {dias.map(d => <option key={d} value={d}>{d}mm</option>)}
         </select>
         <input type="number" value={entry1.nos} onChange={e => set1('nos', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '5px', backgroundColor: '#1565c0', color: 'white', border: 'none', textAlign: 'center' }} />
       </div>
-      {/* Entry 2 Row */}
       <div style={{ display: 'flex', gap: '5px' }}>
-        <select value={entry2.dia} onChange={e => set2('dia', parseInt(e.target.value))} style={{ width: '50%', padding: '8px', borderRadius: '5px', border: '1px solid #ddd', backgroundColor: '#f0f4f8' }}>
+        <select value={entry2.dia} onChange={e => set2('dia', parseInt(e.target.value))} style={{ width: '50%', padding: '8px', borderRadius: '5px', border: '1px solid #ddd' }}>
           {dias.map(d => <option key={d} value={d}>{d}mm</option>)}
         </select>
         <input type="number" value={entry2.nos} onChange={e => set2('nos', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '5px', backgroundColor: '#1565c0', color: 'white', border: 'none', textAlign: 'center' }} />
