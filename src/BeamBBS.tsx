@@ -11,7 +11,7 @@ const GET_BUNDLE_WEIGHT = (dia: number) => {
   return map[dia] || 0;
 };
 
-// EXCEL CONSTANTS
+// EXCEL CONSTANTS FROM YOUR SHEET
 const EXCEL_FT_TO_M_DIVIDER = 3.281;
 const ROD_UNIT_LEN = 12;
 
@@ -54,9 +54,10 @@ const BeamBBS: React.FC = () => {
       const wM = (parseFloat(beam.width) || 0) / 1000;
       const dM = (parseFloat(beam.depth) || 0) / 1000;
 
+      // Concrete: W * D * L
       grandConcrete += (wM * dM * lMainM);
 
-      // THE CORE EXCEL FORMULA MATCHING YOUR "Converting Bundles to Kgs"
+      // THE CORE EXCEL FORMULA: ( (LengthM * Nos) / (RodsPerBundle * 12) ) * BundleWeight
       const calculateExcelKg = (dia: number, nosStr: string, lengthM: number) => {
         const nos = parseFloat(nosStr) || 0;
         if (nos === 0 || dia === 0) return 0;
@@ -64,33 +65,33 @@ const BeamBBS: React.FC = () => {
         const rodsPerBundle = GET_RODS_PER_BUNDLE(dia);
         const bundleWeight = GET_BUNDLE_WEIGHT(dia);
         
-        // Match Excel Exactly: (LengthM * Nos) / (RodsPerBundle * 12) * BundleWeight
-        return ((lengthM * nos) / (rodsPerBundle * ROD_UNIT_LEN)) * bundleWeight;
+        // Exact bundle math per entry
+        const requiredBundles = (lengthM * nos) / (rodsPerBundle * ROD_UNIT_LEN);
+        return requiredBundles * bundleWeight;
       };
 
-      // CALCULATE EVERY ENTRY SEPARATELY AND SUM THEM TO PREVENT ROUNDING ERRORS
-      // 16mm Entries
-      const b16 = calculateExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
-      const t16 = calculateExcelKg(beam.top.dia1, beam.top.num1, lMainM);
-      const e16 = calculateExcelKg(beam.extra.dia1, beam.extra.num1, lExtraM);
-      summary[16] += (b16 + t16 + e16);
+      // CALCULATE EACH ENTRY INDIVIDUALLY TO PREVENT LOGIC MISTAKES
+      // This sums up 16mm from all three zones exactly like your Excel sheet
+      summary[16] += calculateExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
+      summary[16] += calculateExcelKg(beam.top.dia1, beam.top.num1, lMainM);
+      summary[16] += calculateExcelKg(beam.extra.dia1, beam.extra.num1, lExtraM);
 
-      // 12mm Entries
-      const b12 = calculateExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
-      const t12 = calculateExcelKg(beam.top.dia2, beam.top.num2, lMainM);
-      const e12 = calculateExcelKg(beam.extra.dia2, beam.extra.num2, lExtraM);
-      summary[12] += (b12 + t12 + e12);
+      // This sums up 12mm from all three zones
+      summary[12] += calculateExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
+      summary[12] += calculateExcelKg(beam.top.dia2, beam.top.num2, lMainM);
+      summary[12] += calculateExcelKg(beam.extra.dia2, beam.extra.num2, lExtraM);
 
-      // Stirrups matching your 3.5ft logic
+      // Stirrups (8mm)
       const stirrupQty = Math.floor(((parseFloat(beam.lenMain) || 0) * 12) / (parseFloat(beam.spacing) || 6)) + 1;
-      summary[8] += calculateExcelKg(8, stirrupQty.toString(), 3.5 / EXCEL_FT_TO_M_DIVIDER);
+      const stirrupCutM = 3.5 / EXCEL_FT_TO_M_DIVIDER; 
+      summary[8] += calculateExcelKg(8, stirrupQty.toString(), stirrupCutM);
     });
 
     return { summary, grandConcrete };
   }, [beams]);
 
   return (
-    <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'Arial' }}>
+    <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'Arial, sans-serif' }}>
       <header style={{ backgroundColor: '#1565c0', color: '#fff', padding: '15px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0 }}>BEAM BBS</h2>
       </header>
