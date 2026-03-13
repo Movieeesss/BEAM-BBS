@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 
-// DATA MATCHING YOUR EXCEL: "Weight of one bundle" and "Rods per bundle"
+// BUNDLE CONFIGURATION FROM YOUR EXCEL
 const BUNDLE_DATA: Record<number, { weight: number; rods: number }> = {
   8:  { weight: 47.40, rods: 10 },
   10: { weight: 51.87, rods: 7 },
@@ -25,9 +25,9 @@ interface BeamData {
 const BeamBBS: React.FC = () => {
   const [beams, setBeams] = useState<BeamData[]>([{ 
     id: '1', grid: 'B1', width: '230', depth: '380', lenMain: '60', lenExtra: '30',
-    bottom: { dia1: 16, num1: '3', dia2: 12, num2: '1' },
-    top: { dia1: 16, num1: '2', dia2: 12, num2: '1' },
-    extra: { dia1: 16, num1: '1', dia2: 12, num2: '0' },
+    bottom: { dia1: 16, num1: '1', dia2: 12, num2: '1' },
+    top: { dia1: 16, num1: '1', dia2: 12, num2: '1' },
+    extra: { dia1: 16, num1: '1', dia2: 12, num2: '1' },
     diaStirrups: 8, spacing: '6' 
   }]);
 
@@ -52,37 +52,37 @@ const BeamBBS: React.FC = () => {
       const wM = (parseFloat(beam.width) || 0) / 1000;
       const dM = (parseFloat(beam.depth) || 0) / 1000;
 
-      // Concrete Calculation
+      // Concrete: L * W * D
       grandConcrete += (wM * dM * lMainM);
 
-      // EXACT EXCEL COLUMN LOGIC:
-      // Required Bundles = (Length * Nos) / (RodsPerBundle * 12)
-      // Converted KG = Required Bundles * BundleWeight
-      const calcExcelKg = (dia: number, nosStr: string, lengthM: number) => {
+      // THE CORE EXCEL FORMULA:
+      // Weight = ( (LengthM * Nos) / (RodsPerBundle * 12) ) * BundleWeight
+      const getExcelKg = (dia: number, nosStr: string, lengthM: number) => {
         const nos = parseFloat(nosStr) || 0;
         if (nos === 0 || !BUNDLE_DATA[dia]) return 0;
-        
         const config = BUNDLE_DATA[dia];
-        const requiredBundles = (lengthM * nos) / (config.rods * ROD_LEN_M);
-        return requiredBundles * config.weight;
+        const weight = ((lengthM * nos) / (config.rods * ROD_LEN_M)) * config.weight;
+        return weight;
       };
 
-      // 16mm Calculations
-      const b16 = calcExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM); // 113.773
-      const t16 = calcExcelKg(beam.top.dia1, beam.top.num1, lMainM);       // 75.848
-      const e16 = calcExcelKg(beam.extra.dia1, beam.extra.num1, lExtraM);    // 14.221
-      summary[16] += (b16 + t16 + e16);
+      // Calculate every entry separately just like your Excel columns
+      const entries = [
+        { dia: beam.bottom.dia1, kg: getExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM) },
+        { dia: beam.bottom.dia2, kg: getExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM) },
+        { dia: beam.top.dia1,    kg: getExcelKg(beam.top.dia1,    beam.top.num1,    lMainM) },
+        { dia: beam.top.dia2,    kg: getExcelKg(beam.top.dia2,    beam.top.num2,    lMainM) },
+        { dia: beam.extra.dia1,  kg: getExcelKg(beam.extra.dia1,  beam.extra.num1,  lExtraM) },
+        { dia: beam.extra.dia2,  kg: getExcelKg(beam.extra.dia2,  beam.extra.num2,  lExtraM) }
+      ];
 
-      // 12mm Calculations
-      const b12 = calcExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM); // 64.027
-      const t12 = calcExcelKg(beam.top.dia2, beam.top.num2, lMainM);       // 64.027
-      const e12 = calcExcelKg(beam.extra.dia2, beam.extra.num2, lExtraM);    // 0
-      summary[12] += (b12 + t12 + e12);
+      entries.forEach(item => {
+        if (item.dia in summary) summary[item.dia] += item.kg;
+      });
 
-      // Stirrups (8mm)
+      // Stirrups (8mm) logic matching your Excel Cut Length and Spacing
       const stirrupQty = Math.floor(((parseFloat(beam.lenMain) || 0) * 12) / (parseFloat(beam.spacing) || 6)) + 1;
       const stirrupCutM = (((wM * 1000 - 80) * 2) + ((dM * 1000 - 80) * 2) + 200) / 1000;
-      summary[8] += calcExcelKg(8, stirrupQty.toString(), stirrupCutM);
+      summary[8] += getExcelKg(8, stirrupQty.toString(), stirrupCutM);
     });
 
     return { summary, grandConcrete };
