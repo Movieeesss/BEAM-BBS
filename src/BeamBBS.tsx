@@ -54,6 +54,7 @@ const BeamBBS = () => {
 
   // --- CALCULATION ENGINE (EXACT EXCEL MATCH) ---
   const totals = useMemo(() => {
+    // Initialize summary with all possible diameters
     const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
     let totalConcrete = 0;
 
@@ -70,7 +71,8 @@ const BeamBBS = () => {
         return ((lenM * n) / (config.rods * ROD_LEN)) * config.weight;
       };
 
-      // Summing each rod entry individually as per Excel row logic
+      // Summing each rod entry INDIVIDUALLY to match Excel row logic exactly
+      // This is what prevents the 10mm and 12mm errors
       summary[b.bottom1.dia] += calcKg(b.bottom1.dia, b.bottom1.nos, L_Main);
       summary[b.bottom2.dia] += calcKg(b.bottom2.dia, b.bottom2.nos, L_Main);
       summary[b.top1.dia] += calcKg(b.top1.dia, b.top1.nos, L_Main);
@@ -78,7 +80,7 @@ const BeamBBS = () => {
       summary[b.ex1.dia] += calcKg(b.ex1.dia, b.ex1.nos, L_Main); 
       summary[b.ex2.dia] += calcKg(b.ex2.dia, b.ex2.nos, L_Ex);
 
-      // Stirrups matching your 3.5ft Excel logic
+      // Stirrups (8mm)
       const stirrupQty = Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
       summary[8] += calcKg(8, stirrupQty.toString(), 3.5 / DIVIDER);
     });
@@ -119,18 +121,18 @@ const BeamBBS = () => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '15px' }}>
-              <Input label="Width" val={b.w} set={(v) => updateBeam(b.id, 'w', v)} />
-              <Input label="Depth" val={b.d} set={(v) => updateBeam(b.id, 'd', v)} />
-              <Input label="Main(ft)" val={b.mainFt} set={(v) => updateBeam(b.id, 'mainFt', v)} />
+              <Input label="Width" val={b.w} set={(v:any) => updateBeam(b.id, 'w', v)} />
+              <Input label="Depth" val={b.d} set={(v:any) => updateBeam(b.id, 'd', v)} />
+              <Input label="Main(ft)" val={b.mainFt} set={(v:any) => updateBeam(b.id, 'mainFt', v)} />
             </div>
 
-            <Section label="Bottom" entry1={b.bottom1} entry2={b.bottom2} set1={(f, v) => updateBeam(b.id, `bottom1.${f}`, v)} set2={(f, v) => updateBeam(b.id, `bottom2.${f}`, v)} />
-            <Section label="Top" entry1={b.top1} entry2={b.top2} set1={(f, v) => updateBeam(b.id, `top1.${f}`, v)} set2={(f, v) => updateBeam(b.id, `top2.${f}`, v)} />
-            <Section label="Extra" entry1={b.ex1} entry2={b.ex2} set1={(f, v) => updateBeam(b.id, `ex1.${f}`, v)} set2={(f, v) => updateBeam(b.id, `ex2.${f}`, v)} />
+            <Section label="Bottom" entry1={b.bottom1} entry2={b.bottom2} set1={(f:any, v:any) => updateBeam(b.id, `bottom1.${f}`, v)} set2={(f:any, v:any) => updateBeam(b.id, `bottom2.${f}`, v)} />
+            <Section label="Top" entry1={b.top1} entry2={b.top2} set1={(f:any, v:any) => updateBeam(b.id, `top1.${f}`, v)} set2={(f:any, v:any) => updateBeam(b.id, `top2.${f}`, v)} />
+            <Section label="Extra" entry1={b.ex1} entry2={b.ex2} set1={(f:any, v:any) => updateBeam(b.id, `ex1.${f}`, v)} set2={(f:any, v:any) => updateBeam(b.id, `ex2.${f}`, v)} />
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
-              <Input label="Ex Len(ft)" val={b.exFt} set={(v) => updateBeam(b.id, 'exFt', v)} />
-              <Input label="Spacing(in)" val={b.spacing} set={(v) => updateBeam(b.id, 'spacing', v)} />
+              <Input label="Ex Len(ft)" val={b.exFt} set={(v:any) => updateBeam(b.id, 'exFt', v)} />
+              <Input label="Spacing(in)" val={b.spacing} set={(v:any) => updateBeam(b.id, 'spacing', v)} />
             </div>
           </div>
         ))}
@@ -142,7 +144,7 @@ const BeamBBS = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '18px' }}>
             <span>Concrete:</span> <strong>{totals.totalConcrete.toFixed(3)} m³</strong>
           </div>
-          {Object.entries(totals.summary).map(([dia, kg]) => kg > 0 && (
+          {Object.entries(totals.summary).map(([dia, kg]) => (kg > 0) && (
             <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid #f0f0f0', fontSize: '18px' }}>
               <span>{dia}mm Steel:</span> <strong>{kg.toFixed(2)} KG</strong>
             </div>
