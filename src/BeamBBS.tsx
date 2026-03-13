@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 
-// EXACT DATA FROM YOUR EXCEL SWITCH FORMULAS
+// DATA FROM YOUR EXCEL SWITCH FORMULAS
 const GET_RODS_PER_BUNDLE = (dia: number) => {
   const map: Record<number, number> = { 8: 10, 10: 7, 12: 5, 16: 3, 20: 2, 25: 1 };
   return map[dia] || 0;
@@ -11,7 +11,6 @@ const GET_BUNDLE_WEIGHT = (dia: number) => {
   return map[dia] || 0;
 };
 
-// EXCEL CONSTANTS
 const EXCEL_FT_TO_M_DIVIDER = 3.281;
 const ROD_UNIT_LEN = 12;
 
@@ -49,7 +48,6 @@ const BeamBBS: React.FC = () => {
     let grandConcrete = 0;
 
     beams.forEach(beam => {
-      // 1. Length conversion using your 3.281 factor
       const lMainM = (parseFloat(beam.lenMain) || 0) / EXCEL_FT_TO_M_DIVIDER;
       const lExtraM = (parseFloat(beam.lenExtra) || 0) / EXCEL_FT_TO_M_DIVIDER;
       const wM = (parseFloat(beam.width) || 0) / 1000;
@@ -57,7 +55,7 @@ const BeamBBS: React.FC = () => {
 
       grandConcrete += (wM * dM * lMainM);
 
-      // 2. The Excel "Converting Bundles to Kgs" Logic
+      // THE CORE EXCEL FORMULA MATCHING YOUR "Converting Bundles to Kgs"
       const calculateExcelKg = (dia: number, nosStr: string, lengthM: number) => {
         const nos = parseFloat(nosStr) || 0;
         if (nos === 0 || dia === 0) return 0;
@@ -65,28 +63,22 @@ const BeamBBS: React.FC = () => {
         const rodsPerBundle = GET_RODS_PER_BUNDLE(dia);
         const bundleWeight = GET_BUNDLE_WEIGHT(dia);
         
-        // Required Bundles = (LengthM * Nos) / (RodsPerBundle * 12)
+        // Exact bundle calculation used in your sheet
         const requiredBundles = (lengthM * nos) / (rodsPerBundle * ROD_UNIT_LEN);
-        
-        // KG = Required Bundles * Bundle Weight
         return requiredBundles * bundleWeight;
       };
 
-      const parts = [
-        { dia: beam.bottom.dia1, kg: calculateExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM) },
-        { dia: beam.bottom.dia2, kg: calculateExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM) },
-        { dia: beam.top.dia1, kg: calculateExcelKg(beam.top.dia1, beam.top.num1, lMainM) },
-        { dia: beam.top.dia2, kg: calculateExcelKg(beam.top.dia2, beam.top.num2, lMainM) },
-        { dia: beam.extra.dia1, kg: calculateExcelKg(beam.extra.dia1, beam.extra.num1, lExtraM) },
-        { dia: beam.extra.dia2, kg: calculateExcelKg(beam.extra.dia2, beam.extra.num2, lExtraM) }
-      ];
+      // Summing each entry individually to match Excel row-by-row logic
+      summary[beam.bottom.dia1] += calculateExcelKg(beam.bottom.dia1, beam.bottom.num1, lMainM);
+      summary[beam.bottom.dia2] += calculateExcelKg(beam.bottom.dia2, beam.bottom.num2, lMainM);
+      summary[beam.top.dia1] += calculateExcelKg(beam.top.dia1, beam.top.num1, lMainM);
+      summary[beam.top.dia2] += calculateExcelKg(beam.top.dia2, beam.top.num2, lMainM);
+      summary[beam.extra.dia1] += calculateExcelKg(beam.extra.dia1, beam.extra.num1, lExtraM);
+      summary[beam.extra.dia2] += calculateExcelKg(beam.extra.dia2, beam.extra.num2, lExtraM);
 
-      parts.forEach(p => { if (p.dia in summary) summary[p.dia] += p.kg; });
-
-      // 3. Stirrups matching your Beam Stirrups logic
+      // Stirrups logic using 3.5ft standard
       const stirrupQty = Math.floor(((parseFloat(beam.lenMain) || 0) * 12) / (parseFloat(beam.spacing) || 6)) + 1;
-      const stirrupCutM = 3.5 / EXCEL_FT_TO_M_DIVIDER; // Using your 3.5ft standard from AH15
-      summary[beam.diaStirrups] += calculateExcelKg(beam.diaStirrups, stirrupQty.toString(), stirrupCutM);
+      summary[8] += calculateExcelKg(8, stirrupQty.toString(), 3.5 / EXCEL_FT_TO_M_DIVIDER);
     });
 
     return { summary, grandConcrete };
@@ -94,7 +86,7 @@ const BeamBBS: React.FC = () => {
 
   return (
     <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', padding: '15px', fontFamily: 'Arial' }}>
-      <header style={{ backgroundColor: '#1565c0', color: '#fff', padding: '20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
+      <header style={{ backgroundColor: '#1565c0', color: '#fff', padding: '15px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0 }}>BEAM BBS</h2>
       </header>
 
@@ -123,7 +115,7 @@ const BeamBBS: React.FC = () => {
         </div>
       ))}
 
-      <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '15px', border: '2px solid #1565c0' }}>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '15px', border: '2px solid #1565c0' }}>
         <h3 style={{ marginTop: 0, textAlign: 'center', color: '#1565c0' }}>PROJECT TOTALS</h3>
         <p style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px' }}>Concrete: <strong>{results.grandConcrete.toFixed(3)} m³</strong></p>
         <hr />
@@ -139,7 +131,7 @@ const BeamBBS: React.FC = () => {
 
 const Box = ({ label, value, onChange }: any) => (
   <div style={{ backgroundColor: '#e3f2fd', padding: '10px', borderRadius: '8px' }}>
-    <label style={{ fontSize: '11px', color: '#1565c0', display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>{label}</label>
+    <label style={{ fontSize: '11px', color: '#1565c0', display: 'block', fontWeight: 'bold' }}>{label}</label>
     <input type="number" value={value} onChange={e => onChange(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', fontSize: '16px', outline: 'none' }} />
   </div>
 );
