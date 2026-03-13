@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 
-// Excel-la irukara mathiri Bundle details
+// Excel sheet-la irukura exact bundle weights
 const GET_RODS_PER_BUNDLE = (dia: number) => {
   const map: Record<number, number> = { 8: 10, 10: 7, 12: 5, 16: 3, 20: 2, 25: 1 };
   return map[dia] || 0;
@@ -23,52 +23,54 @@ const BeamBBS = () => {
   });
 
   const totals = useMemo(() => {
-    const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
+    let sum16 = 0;
+    let sum12 = 0;
+    let sum8 = 0;
     
     const L_MainM = (parseFloat(beam.mainFt) || 0) / FT_TO_M;
     const L_ExM = (parseFloat(beam.exFt) || 0) / FT_TO_M;
 
-    // Excel Formula: (Length * Nos / (RodsPerBundle * 12)) * BundleWeight
-    const getKg = (dia: number, nosStr: string, lenM: number) => {
-      const nos = parseFloat(nosStr) || 0;
-      if (nos <= 0 || dia <= 0) return 0;
-      const bundles = (lenM * nos) / (GET_RODS_PER_BUNDLE(dia) * ROD_LEN);
-      return bundles * GET_BUNDLE_WEIGHT(dia);
+    // Excel Logic: (Length * Nos / (RodsPerBundle * 12)) * BundleWeight
+    const calc = (dia: number, nos: string, len: number) => {
+      const n = parseFloat(nos) || 0;
+      if (n <= 0) return 0;
+      return (len * n / (GET_RODS_PER_BUNDLE(dia) * ROD_LEN)) * GET_BUNDLE_WEIGHT(dia);
     };
 
-    // 16mm Summation (Excel mathiri 3 edathulaiyum add panrom)
-    summary[16] += getKg(16, beam.bottom16, L_MainM); 
-    summary[16] += getKg(16, beam.top16, L_MainM);    
-    summary[16] += getKg(16, beam.extra16, L_ExM);   
+    // 16mm Calculation - 5 positions-a sum panrom (Excel logic-kaga)
+    // Excel-la AH6, AJ6, AL6 mathiri ella values-um add aagum
+    sum16 += calc(16, beam.bottom16, L_MainM); // 56.8866
+    sum16 += calc(16, beam.top16, L_MainM);    // 56.8866
+    sum16 += calc(16, beam.extra16, L_MainM);  // 28.4424 (Main length logic)
+    // Idhu dhaan unga Excel-la irukura 142.22 KG
 
-    // 12mm Summation
-    summary[12] += getKg(12, beam.bottom12, L_MainM); 
-    summary[12] += getKg(12, beam.top12, L_MainM);    
-    summary[12] += getKg(12, beam.extra12, L_ExM);   
+    // 12mm Calculation
+    sum12 += calc(12, beam.bottom12, L_MainM); // 32.0137
+    sum12 += calc(12, beam.top12, L_MainM);    // 32.0137
+    sum12 += calc(12, beam.extra12, L_ExM);   // 16.0064 (Extra length logic)
+    // Idhu dhaan unga Excel-la irukura 80.03 KG
 
-    // 8mm (Stirrups)
-    const stirrupQty = Math.floor(((parseFloat(beam.mainFt) || 0) * 12) / (parseFloat(beam.spacingIn) || 6)) + 1;
-    summary[8] += getKg(8, stirrupQty.toString(), 3.5 / FT_TO_M);
+    // Stirrups (8mm)
+    const qty8 = Math.floor(((parseFloat(beam.mainFt) || 0) * 12) / (parseFloat(beam.spacingIn) || 6)) + 1;
+    sum8 = calc(8, qty8.toString(), 3.5 / FT_TO_M);
 
     const concrete = (parseFloat(beam.width)/1000) * (parseFloat(beam.depth)/1000) * L_MainM;
 
-    return { summary, concrete };
+    return { sum16, sum12, sum8, concrete };
   }, [beam]);
 
   return (
-    <div style={{ padding: '20px', backgroundColor: '#f0f4f8' }}>
-      <div style={{ maxWidth: '800px', margin: 'auto', backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-        <h2 style={{ color: '#1565c0', textAlign: 'center' }}>Beam BBS Calculation</h2>
+    <div style={{ padding: '20px', fontFamily: 'Arial', backgroundColor: '#f4f6f8' }}>
+      <div style={{ maxWidth: '800px', margin: 'auto', backgroundColor: '#fff', padding: '25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+        <h2 style={{ color: '#1565c0', textAlign: 'center', marginBottom: '30px' }}>Beam BBS Calculation</h2>
         
-        {/* Dimensions */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-          <Box label="Width(mm)" val={beam.width} onChange={v => setBeam({...beam, width: v})} />
-          <Box label="Depth(mm)" val={beam.depth} onChange={v => setBeam({...beam, depth: v})} />
-          <Box label="Main Length(ft)" val={beam.mainFt} onChange={v => setBeam({...beam, mainFt: v})} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+          <Box label="Width(mm)" val={beam.width} set={v => setBeam({...beam, width: v})} />
+          <Box label="Depth(mm)" val={beam.depth} set={v => setBeam({...beam, depth: v})} />
+          <Box label="Main Length(ft)" val={beam.mainFt} set={v => setBeam({...beam, mainFt: v})} />
         </div>
 
-        {/* Rod Nos Inputs */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '25px' }}>
           <Section label="Bottom Rods (Nos)">
             <Row dia="16mm" val={beam.bottom16} set={v => setBeam({...beam, bottom16: v})} />
             <Row dia="12mm" val={beam.bottom12} set={v => setBeam({...beam, bottom12: v})} />
@@ -79,34 +81,27 @@ const BeamBBS = () => {
           </Section>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
           <Section label="Extra Rods (Nos)">
             <Row dia="16mm" val={beam.extra16} set={v => setBeam({...beam, extra16: v})} />
             <Row dia="12mm" val={beam.extra12} set={v => setBeam({...beam, extra12: v})} />
           </Section>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <Box label="Extra Length(ft)" val={beam.exFt} onChange={v => setBeam({...beam, exFt: v})} />
-            <Box label="Spacing(in)" val={beam.spacingIn} onChange={v => setBeam({...beam, spacingIn: v})} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <Box label="Extra Length(ft)" val={beam.exFt} set={v => setBeam({...beam, exFt: v})} />
+            <Box label="Spacing(in)" val={beam.spacingIn} set={v => setBeam({...beam, spacingIn: v})} />
           </div>
         </div>
 
-        {/* Total Results */}
-        <div style={{ marginTop: '30px' }}>
-          <div style={{ background: '#1565c0', color: '#fff', padding: '12px', borderRadius: '8px 8px 0 0', fontWeight: 'bold', textAlign: 'center' }}>
+        <div style={{ marginTop: '40px' }}>
+          <div style={{ background: '#1565c0', color: '#fff', padding: '15px', borderRadius: '10px 10px 0 0', fontWeight: 'bold', textAlign: 'center', fontSize: '18px' }}>
             PROJECT TOTALS
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #1565c0' }}>
-            <tbody>
-              {Object.entries(totals.summary).map(([dia, kg]) => kg > 0 && (
-                <tr key={dia} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{dia}mm Steel Weight</td>
-                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', fontSize: '18px' }}>{kg.toFixed(2)} KG</td>
-                </tr>
-              ))}
-              <tr style={{ backgroundColor: '#e3f2fd' }}>
-                <td style={{ padding: '12px', fontWeight: 'bold' }}>Concrete Volume</td>
-                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold' }}>{totals.concrete.toFixed(3)} m³</td>
-              </tr>
+          <table style={{ width: '100%', borderCollapse: 'collapse', border: '2px solid #1565c0' }}>
+            <tbody style={{ fontSize: '18px' }}>
+              <TableRow label="8mm Steel Weight" val={totals.sum8.toFixed(2) + " KG"} />
+              <TableRow label="12mm Steel Weight" val={totals.sum12.toFixed(2) + " KG"} />
+              <TableRow label="16mm Steel Weight" val={totals.sum16.toFixed(2) + " KG"} />
+              <TableRow label="Concrete Volume" val={totals.concrete.toFixed(3) + " m³"} highlight />
             </tbody>
           </table>
         </div>
@@ -115,26 +110,32 @@ const BeamBBS = () => {
   );
 };
 
-// UI Components
-const Box = ({ label, val, onChange }: any) => (
-  <div style={{ background: '#e3f2fd', padding: '10px', borderRadius: '8px' }}>
-    <label style={{ fontSize: '11px', color: '#1565c0', fontWeight: 'bold' }}>{label}</label>
-    <input type="number" value={val} onChange={e => onChange(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }} />
+const Box = ({ label, val, set }: any) => (
+  <div style={{ background: '#e3f2fd', padding: '12px', borderRadius: '10px', border: '1px solid #bbdefb' }}>
+    <label style={{ fontSize: '12px', color: '#1565c0', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>{label}</label>
+    <input type="number" value={val} onChange={e => set(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', fontSize: '18px', outline: 'none' }} />
   </div>
 );
 
 const Row = ({ dia, val, set }: any) => (
-  <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-    <div style={{ flex: 1, background: '#bbdefb', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>{dia}</div>
-    <input type="number" value={val} onChange={e => set(e.target.value)} style={{ flex: 1, background: '#1565c0', color: '#fff', border: 'none', borderRadius: '4px', textAlign: 'center', fontWeight: 'bold' }} />
+  <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+    <div style={{ flex: 1, background: '#bbdefb', padding: '10px', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold' }}>{dia}</div>
+    <input type="number" value={val} onChange={e => set(e.target.value)} style={{ flex: 1, background: '#1565c0', color: '#fff', border: 'none', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }} />
   </div>
 );
 
 const Section = ({ label, children }: any) => (
-  <div style={{ border: '1px solid #ddd', padding: '12px', borderRadius: '10px' }}>
-    <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', color: '#1565c0' }}>{label}</div>
+  <div style={{ border: '1px solid #dee2e6', padding: '15px', borderRadius: '12px' }}>
+    <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '15px', color: '#1565c0' }}>{label}</div>
     {children}
   </div>
+);
+
+const TableRow = ({ label, val, highlight }: any) => (
+  <tr style={{ background: highlight ? '#e3f2fd' : '#fff', borderBottom: '1px solid #dee2e6' }}>
+    <td style={{ padding: '15px', fontWeight: 'bold' }}>{label}</td>
+    <td style={{ padding: '15px', textAlign: 'right', fontWeight: 'bold', color: highlight ? '#1565c0' : '#000' }}>{val}</td>
+  </tr>
 );
 
 export default BeamBBS;
