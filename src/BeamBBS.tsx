@@ -1,8 +1,17 @@
 import React, { useState, useMemo, useCallback } from 'react';
 
-// Standard conversion factors
+// DATA MATCHING YOUR EXCEL "Weight of one bundle" and "Rods to one bundle"
+const BUNDLE_DATA: Record<number, { weight: number; rods: number }> = {
+  8:  { weight: 47.40, rods: 10 },
+  10: { weight: 51.87, rods: 7 },
+  12: { weight: 53.35, rods: 5 },
+  16: { weight: 56.88, rods: 3 },
+  20: { weight: 59.26, rods: 2 },
+  25: { weight: 60.00, rods: 1 }
+};
+
 const FT_TO_M = 0.3048;
-const IN_TO_MM = 25.4;
+const ROD_LEN_M = 12;
 
 interface RodSet { dia1: number; num1: string; dia2: number; num2: string; }
 
@@ -15,7 +24,7 @@ interface BeamData {
 
 const BeamBBS: React.FC = () => {
   const [beams, setBeams] = useState<BeamData[]>([{ 
-    id: '1', grid: 'B1', width: '230', depth: '380', lenMain: '55.25', lenExtra: '26.7',
+    id: '1', grid: 'B1', width: '230', depth: '380', lenMain: '60', lenExtra: '30',
     bottom: { dia1: 16, num1: '3', dia2: 12, num2: '1' },
     top: { dia1: 16, num1: '2', dia2: 12, num2: '1' },
     extra: { dia1: 16, num1: '1', dia2: 12, num2: '0' },
@@ -43,40 +52,33 @@ const BeamBBS: React.FC = () => {
       const wM = (parseFloat(beam.width) || 0) / 1000;
       const dM = (parseFloat(beam.depth) || 0) / 1000;
 
-      // 1. Concrete Calculation (L * W * D)
-      const vol = wM * dM * lMainM;
-      grandConcrete += vol;
+      // Concrete: W * D * L
+      grandConcrete += (wM * dM * lMainM);
 
-      // 2. Steel Calculation Function (D^2 / 162 * Total Length)
-      const calcWeight = (dia: number, nosStr: string, lengthM: number) => {
+      // EXCEL LOGIC: ((Length * Nos) / (RodsPerBundle * 12)) * BundleWeight
+      const calcExcelWeight = (dia: number, nosStr: string, lengthM: number) => {
         const nos = parseFloat(nosStr) || 0;
-        if (nos === 0 || dia === 0) return 0;
-        return (Math.pow(dia, 2) / 162) * (nos * lengthM);
+        if (nos === 0 || !BUNDLE_DATA[dia]) return 0;
+        const config = BUNDLE_DATA[dia];
+        return ((lengthM * nos) / (config.rods * ROD_LEN_M)) * config.weight;
       };
 
-      // Calculate all reinforcement parts
-      const parts = [
-        { dia: beam.bottom.dia1, kg: calcWeight(beam.bottom.dia1, beam.bottom.num1, lMainM) },
-        { dia: beam.bottom.dia2, kg: calcWeight(beam.bottom.dia2, beam.bottom.num2, lMainM) },
-        { dia: beam.top.dia1, kg: calcWeight(beam.top.dia1, beam.top.num1, lMainM) },
-        { dia: beam.top.dia2, kg: calcWeight(beam.top.dia2, beam.top.num2, lMainM) },
-        { dia: beam.extra.dia1, kg: calcWeight(beam.extra.dia1, beam.extra.num1, lExtraM) },
-        { dia: beam.extra.dia2, kg: calcWeight(beam.extra.dia2, beam.extra.num2, lExtraM) }
+      // Summing all categories
+      const steelParts = [
+        { dia: beam.bottom.dia1, kg: calcExcelWeight(beam.bottom.dia1, beam.bottom.num1, lMainM) },
+        { dia: beam.bottom.dia2, kg: calcExcelWeight(beam.bottom.dia2, beam.bottom.num2, lMainM) },
+        { dia: beam.top.dia1, kg: calcExcelWeight(beam.top.dia1, beam.top.num1, lMainM) },
+        { dia: beam.top.dia2, kg: calcExcelWeight(beam.top.dia2, beam.top.num2, lMainM) },
+        { dia: beam.extra.dia1, kg: calcExcelWeight(beam.extra.dia1, beam.extra.num1, lExtraM) },
+        { dia: beam.extra.dia2, kg: calcExcelWeight(beam.extra.dia2, beam.extra.num2, lExtraM) }
       ];
 
-      parts.forEach(p => { if (p.dia in summary) summary[p.dia] += p.kg; });
+      steelParts.forEach(p => { if (p.dia in summary) summary[p.dia] += p.kg; });
 
-      // 3. Stirrups Calculation
-      // Spacing is in inches, converted to meters for quantity calculation
-      const spacingM = (parseFloat(beam.spacing) * IN_TO_MM) / 1000;
-      const stirrupQty = Math.floor(lMainM / spacingM) + 1;
-      
-      // Stirrup Cut Length (2 * (W-ClearCover) + 2 * (D-ClearCover) + Hooks)
-      // Assuming 40mm clear cover and 100mm total for hooks
-      const cutLenM = (((wM * 1000 - 80) * 2) + ((dM * 1000 - 80) * 2) + 100) / 1000;
-      const stirrupWeight = (Math.pow(beam.diaStirrups, 2) / 162) * (stirrupQty * cutLenM);
-      
-      summary[beam.diaStirrups] += stirrupWeight;
+      // Stirrups (8mm) Calculation
+      const stirrupQty = Math.floor(((parseFloat(beam.lenMain) || 0) * 12) / (parseFloat(beam.spacing) || 6)) + 1;
+      const stirrupCutM = (((wM * 1000 - 80) * 2) + ((dM * 1000 - 80) * 2) + 200) / 1000;
+      summary[8] += ((stirrupCutM * stirrupQty) / (BUNDLE_DATA[8].rods * ROD_LEN_M)) * BUNDLE_DATA[8].weight;
     });
 
     return { summary, grandConcrete };
@@ -90,26 +92,26 @@ const BeamBBS: React.FC = () => {
 
       {beams.map(beam => (
         <div key={beam.id} style={{ backgroundColor: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-          <div style={{ borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
+          <div style={{ borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: 'bold', color: '#1565c0', fontSize: '20px' }}>{beam.grid}</span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '15px' }}>
-            <Box label="Width(mm)" value={beam.width} onChange={(v: string) => updateBeam(beam.id, 'width', v)} />
-            <Box label="Depth(mm)" value={beam.depth} onChange={(v: string) => updateBeam(beam.id, 'depth', v)} />
-            <Box label="Main(ft)" value={beam.lenMain} onChange={(v: string) => updateBeam(beam.id, 'lenMain', v)} />
+            <Box label="Width(mm)" value={beam.width} onChange={(v:any) => updateBeam(beam.id, 'width', v)} />
+            <Box label="Depth(mm)" value={beam.depth} onChange={(v:any) => updateBeam(beam.id, 'depth', v)} />
+            <Box label="Main(ft)" value={beam.lenMain} onChange={(v:any) => updateBeam(beam.id, 'lenMain', v)} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <Row label="Bottom" rod={beam.bottom} onUpdate={(f: string, v: string) => updateBeam(beam.id, `bottom.${f}`, v)} />
-            <Row label="Top" rod={beam.top} onUpdate={(f: string, v: string) => updateBeam(beam.id, `top.${f}`, v)} />
+            <Row label="Bottom" rod={beam.bottom} onUpdate={(f:any, v:any) => updateBeam(beam.id, `bottom.${f}`, v)} />
+            <Row label="Top" rod={beam.top} onUpdate={(f:any, v:any) => updateBeam(beam.id, `top.${f}`, v)} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-            <Row label="Extra" rod={beam.extra} onUpdate={(f: string, v: string) => updateBeam(beam.id, `extra.${f}`, v)} />
+            <Row label="Extra" rod={beam.extra} onUpdate={(f:any, v:any) => updateBeam(beam.id, `extra.${f}`, v)} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={(v: string) => updateBeam(beam.id, 'lenExtra', v)} />
-              <Box label="Spacing(in)" value={beam.spacing} onChange={(v: string) => updateBeam(beam.id, 'spacing', v)} />
+              <Box label="Ex Len(ft)" value={beam.lenExtra} onChange={(v:any) => updateBeam(beam.id, 'lenExtra', v)} />
+              <Box label="Spacing(in)" value={beam.spacing} onChange={(v:any) => updateBeam(beam.id, 'spacing', v)} />
             </div>
           </div>
         </div>
@@ -119,7 +121,7 @@ const BeamBBS: React.FC = () => {
         <h3 style={{ marginTop: 0, textAlign: 'center', color: '#1565c0' }}>PROJECT TOTALS</h3>
         <p style={{ display: 'flex', justifyContent: 'space-between' }}>Concrete: <strong>{results.grandConcrete.toFixed(3)} m³</strong></p>
         <hr />
-        {Object.entries(results.summary).map(([dia, kg]) => (parseFloat(kg.toString()) > 0) && (
+        {Object.entries(results.summary).map(([dia, kg]) => (kg > 0) && (
           <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
             <span>{dia}mm Steel:</span> <strong>{kg.toFixed(2)} KG</strong>
           </div>
