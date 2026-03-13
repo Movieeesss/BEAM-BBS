@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 
-// Excel-la irukara exact specifications
+// Bundle weights and rods per bundle (Excel Data)
 const GET_RODS_PER_BUNDLE = (dia: number) => {
   const map: Record<number, number> = { 8: 10, 10: 7, 12: 5, 16: 3, 20: 2, 25: 1 };
   return map[dia] || 0;
@@ -33,15 +33,17 @@ const BeamBBS = () => {
       return (lenM * n / (GET_RODS_PER_BUNDLE(dia) * ROD_LEN)) * GET_BUNDLE_WEIGHT(dia);
     };
 
-    // --- 16mm Summation (Exactly like AH6, AJ6, AL6 in Excel) ---
+    // --- 16mm Summation (Bottom + Top + Extra) ---
+    // 56.8866 + 56.8866 + 28.4424 = 142.22 KG
     const final16 = getKg(16, beam.bottom16, L_MainM) + 
                     getKg(16, beam.top16, L_MainM) + 
-                    getKg(16, beam.extra16, L_ExM); // Result: 142.22
+                    getKg(16, beam.extra16, L_ExM);
 
-    // --- 12mm Summation (Exactly like AI6, AK6, AM6 in Excel) ---
+    // --- 12mm Summation (Bottom + Top + Extra) ---
+    // 32.0137 + 32.0137 + 16.0064 = 80.03 KG
     const final12 = getKg(12, beam.bottom12, L_MainM) + 
                     getKg(12, beam.top12, L_MainM) + 
-                    getKg(12, beam.extra12, L_ExM); // Result: 80.03
+                    getKg(12, beam.extra12, L_ExM);
 
     // Stirrups (8mm)
     const qty8 = Math.floor(((parseFloat(beam.mainFt) || 0) * 12) / (parseFloat(beam.spacingIn) || 6)) + 1;
