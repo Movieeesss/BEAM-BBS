@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
-// --- DATA FROM YOUR EXCEL SWITCH FORMULAS (Verified from Columns P-U and V-AA) ---
+// --- DATA FROM YOUR EXCEL SWITCH FORMULAS ---
 const BUNDLE_DATA: Record<number, { weight: number; rods: number }> = {
   8:  { weight: 47.4,  rods: 10 },
   10: { weight: 51.87, rods: 7 },
@@ -12,8 +12,8 @@ const BUNDLE_DATA: Record<number, { weight: number; rods: number }> = {
   25: { weight: 46.3,  rods: 1 }
 };
 
-const DIVIDER = 3.281; // Feet to Meters (Column M, N, O logic)
-const ROD_LEN = 12;    // Rod Length constant
+const DIVIDER = 3.281; // Feet to Meters (Matches your Excel M6 cell)
+const ROD_LEN = 12;    // Denominator rod length
 
 interface RodEntry { dia: number; nos: string; }
 interface Beam {
@@ -52,63 +52,74 @@ const BeamBBS = () => {
     }));
   }, []);
 
-  // --- ENGINE: CALCULATES EVERY EXCEL COLUMN M THROUGH AM ---
-  const beamResults = useMemo(() => {
-    return beams.map(b => {
-      const L_Main = (parseFloat(b.mainFt) || 0) / DIVIDER; // Col M, N
-      const L_Ex = (parseFloat(b.exFt) || 0) / DIVIDER;     // Col O
-
-      const getRowCalc = (entry: RodEntry, len: number) => {
-        const nos = parseFloat(entry.nos) || 0;
-        const config = BUNDLE_DATA[entry.dia];
-        if (!config || nos === 0) return { bundles: 0, kg: 0 };
-        
-        // AB-AG: Required Bundles = (Meters * Nos) / (RodsPerBundle * 12)
-        const bundles = (len * nos) / (config.rods * ROD_LEN);
-        // AH-AM: KG = Bundles * BundleWeight
-        const kg = bundles * config.weight;
-        return { bundles, kg };
-      };
-
-      return {
-        ...b,
-        calcs: {
-          b1: getRowCalc(b.bottom1, L_Main),
-          b2: getRowCalc(b.bottom2, L_Main),
-          t1: getRowCalc(b.top1, L_Main),
-          t2: getRowCalc(b.top2, L_Main),
-          e1: getRowCalc(b.ex1, L_Main),
-          e2: getRowCalc(b.ex2, L_Ex),
-          stirrups: getRowCalc({ dia: 8, nos: (Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1).toString() }, 3.5 / DIVIDER)
-        }
-      };
-    });
-  }, [beams]);
-
+  // --- CALCULATION ENGINE: 100% EXCEL BUNDLE MATCH ---
   const totals = useMemo(() => {
     const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
-    beamResults.forEach(br => {
-      [br.bottom1, br.bottom2, br.top1, br.top2, br.ex1, br.ex2].forEach((entry, i) => {
-        const key = ['b1', 'b2', 't1', 't2', 'e1', 'e2'][i];
-        summary[entry.dia] += (br.calcs as any)[key].kg;
-      });
-      summary[8] += br.calcs.stirrups.kg;
+    let totalConcrete = 0;
+
+    beams.forEach(b => {
+      const L_Main = (parseFloat(b.mainFt) || 0) / DIVIDER;
+      const L_Ex = (parseFloat(b.exFt) || 0) / DIVIDER;
+      totalConcrete += (parseFloat(b.w) / 1000) * (parseFloat(b.d) / 1000) * L_Main;
+
+      // Exact Excel Bundle Logic: (Meters * Nos) / (RodsPerBundle * 12)
+      const calcRowKg = (dia: number, nos: string, lenM: number) => {
+        const n = parseFloat(nos) || 0;
+        if (n === 0 || !BUNDLE_DATA[dia]) return 0;
+        const config = BUNDLE_DATA[dia];
+        
+        // This calculates the exact bundle decimal you see in AB6, AD6, AF6 etc.
+        const bundles = (lenM * n) / (config.rods * ROD_LEN);
+        // Then convert to KG using bundle weight (Column AH, AJ, AL etc.)
+        return bundles * config.weight;
+      };
+
+      // Summing EVERY category independently as per Column logic
+      summary[b.bottom1.dia] += calcRowKg(b.bottom1.dia, b.bottom1.nos, L_Main);
+      summary[b.top1.dia] += calcRowKg(b.top1.dia, b.top1.nos, L_Main);
+      summary[b.ex1.dia] += calcRowKg(b.ex1.dia, b.ex1.nos, L_Main); 
+
+      summary[b.bottom2.dia] += calcRowKg(b.bottom2.dia, b.bottom2.nos, L_Main);
+      summary[b.top2.dia] += calcRowKg(b.top2.dia, b.top2.nos, L_Main);
+      summary[b.ex2.dia] += calcRowKg(b.ex2.dia, b.ex2.nos, L_Ex);
+
+      // Stirrups (8mm)
+      const stirrupQty = Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
+      summary[8] += calcRowKg(8, stirrupQty.toString(), 3.5 / DIVIDER);
     });
-    return summary;
-  }, [beamResults]);
+    return { summary, totalConcrete };
+  }, [beams]);
+
+  const shareWhatsApp = () => {
+    let text = `*Beam BBS Summary*%0A`;
+    Object.entries(totals.summary).forEach(([dia, kg]) => {
+      if (kg > 0) text += `${dia}mm: ${kg.toFixed(2)} KG%0A`;
+    });
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const downloadPDF = () => {
+    const doc = new jsPDF() as any;
+    doc.text("Beam Steel Summary Report", 14, 15);
+    const rows = Object.entries(totals.summary)
+      .filter(([_, kg]) => kg > 0)
+      .map(([dia, kg]) => [`${dia}mm Steel`, `${kg.toFixed(2)} KG`]);
+    doc.autoTable({ head: [['Diameter', 'Total Weight']], body: rows, startY: 20 });
+    doc.save("Beam_BBS_Report.pdf");
+  };
 
   return (
     <div style={{ backgroundColor: '#f0f4f8', minHeight: '100vh', paddingBottom: '40px', fontFamily: 'sans-serif' }}>
-      <header style={{ backgroundColor: '#1565c0', color: 'white', padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>
-        BEAM BBS PROFESSIONAL ESTIMATOR
+      <header style={{ backgroundColor: '#1565c0', color: 'white', padding: '18px', textAlign: 'center', fontWeight: 'bold' }}>
+        BEAM BBS MOBILE PRO
       </header>
 
       <div style={{ padding: '15px' }}>
-        {beamResults.map((b) => (
+        {beams.map((b) => (
           <div key={b.id} style={{ backgroundColor: 'white', borderRadius: '15px', padding: '15px', marginBottom: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
-              <span style={{ color: '#1565c0', fontWeight: 'bold', fontSize: '18px' }}>{b.grid} Details</span>
-              <button onClick={() => deleteBeam(b.id)} style={{ color: '#d32f2f', background: 'none', border: 'none', fontWeight: 'bold' }}>DELETE</button>
+              <input value={b.grid} onChange={(e) => updateBeam(b.id, 'grid', e.target.value)} style={{ border: 'none', color: '#1565c0', fontWeight: 'bold', fontSize: '18px', width: '80px' }} />
+              <button onClick={() => deleteBeam(b.id)} style={{ color: '#d32f2f', background: '#ffebee', border: 'none', borderRadius: '8px', padding: '5px 12px', fontWeight: 'bold' }}>DELETE</button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '15px' }}>
@@ -121,15 +132,9 @@ const BeamBBS = () => {
             <Section label="Top" entry1={b.top1} entry2={b.top2} set1={(f:any, v:any) => updateBeam(b.id, `top1.${f}`, v)} set2={(f:any, v:any) => updateBeam(b.id, `top2.${f}`, v)} />
             <Section label="Extra" entry1={b.ex1} entry2={b.ex2} set1={(f:any, v:any) => updateBeam(b.id, `ex1.${f}`, v)} set2={(f:any, v:any) => updateBeam(b.id, `ex2.${f}`, v)} />
 
-            {/* --- EXCEL COLUMN STAGE VIEW --- */}
-            <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '10px', fontSize: '11px', border: '1px solid #ddd' }}>
-              <div style={{ fontWeight: 'bold', color: '#555', marginBottom: '5px' }}>EXCEL CALCULATION STAGES (AB-AM):</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>16mm Bundles: {(b.calcs.b1.bundles + b.calcs.t1.bundles + b.calcs.e1.bundles).toFixed(5)}</div>
-                <div>16mm KG: {(b.calcs.b1.kg + b.calcs.t1.kg + b.calcs.e1.kg).toFixed(2)}</div>
-                <div>12mm Bundles: {(b.calcs.b2.bundles + b.calcs.t2.bundles + b.calcs.e2.bundles).toFixed(5)}</div>
-                <div>12mm KG: {(b.calcs.b2.kg + b.calcs.t2.kg + b.calcs.e2.kg).toFixed(2)}</div>
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+              <Box label="Ex Len(ft)" val={b.exFt} set={(v:any) => updateBeam(b.id, 'exFt', v)} />
+              <Box label="Spacing(in)" val={b.spacing} set={(v:any) => updateBeam(b.id, 'spacing', v)} />
             </div>
           </div>
         ))}
@@ -137,12 +142,20 @@ const BeamBBS = () => {
         <button onClick={addBeam} style={{ width: '100%', padding: '15px', background: 'white', border: '2px dashed #1565c0', color: '#1565c0', borderRadius: '12px', fontWeight: 'bold', marginBottom: '25px' }}>+ ADD NEW BEAM</button>
 
         <div style={{ backgroundColor: '#fff', borderRadius: '15px', padding: '20px', border: '2px solid #1565c0' }}>
-          <h3 style={{ margin: '0 0 15px 0', textAlign: 'center', color: '#1565c0' }}>FINAL PROJECT TOTALS</h3>
-          {Object.entries(totals).map(([dia, kg]) => (kg > 0) && (
-            <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid #f0f0f0', fontSize: '18px' }}>
-              <span>{dia}mm Reinforcement:</span> <strong>{kg.toFixed(2)} KG</strong>
+          <h3 style={{ margin: '0 0 15px 0', textAlign: 'center', color: '#1565c0' }}>PROJECT TOTALS</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '18px' }}>
+            <span>Concrete:</span> <strong>{totals.totalConcrete.toFixed(3)} m³</strong>
+          </div>
+          {Object.entries(totals.summary).map(([dia, kg]) => (kg > 0) && (
+            <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid #f0f0f0', fontSize: '18px' }}>
+              <span>{dia}mm Steel:</span> <strong>{kg.toFixed(2)} KG</strong>
             </div>
           ))}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px' }}>
+            <button onClick={shareWhatsApp} style={{ padding: '15px', backgroundColor: '#25D366', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>WhatsApp</button>
+            <button onClick={downloadPDF} style={{ padding: '15px', backgroundColor: '#d32f2f', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>Print PDF</button>
+          </div>
         </div>
       </div>
     </div>
@@ -152,22 +165,25 @@ const BeamBBS = () => {
 const Box = ({ label, val, set }: any) => (
   <div style={{ backgroundColor: '#e3f2fd', padding: '8px', borderRadius: '8px' }}>
     <label style={{ fontSize: '10px', color: '#1565c0', fontWeight: 'bold' }}>{label}</label>
-    <input type="number" value={val} onChange={(e) => set(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold' }} />
+    <input type="number" value={val} onChange={(e) => set(e.target.value)} style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 'bold', outline: 'none' }} />
   </div>
 );
 
-const Section = ({ label, entry1, entry2, set1, set2 }: any) => (
-  <div style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px', marginBottom: '10px' }}>
-    <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#555' }}>{label}</div>
-    <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-      <input type="number" value={entry1.dia} onChange={e => set1('dia', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: '1px solid #ddd' }} />
-      <input type="number" value={entry1.nos} onChange={e => set1('nos', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: '#1565c0', color: 'white', textAlign: 'center' }} />
+const Section = ({ label, entry1, entry2, set1, set2 }: any) => {
+  const isAct = (n: any) => (parseFloat(n) || 0) > 0;
+  return (
+    <div style={{ border: '1px solid #eee', borderRadius: '10px', padding: '10px', marginBottom: '10px' }}>
+      <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#555' }}>{label}</div>
+      <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+        <input type="number" value={entry1.dia} onChange={e => set1('dia', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: '1px solid #ddd' }} placeholder="Dia" />
+        <input type="number" value={entry1.nos} onChange={e => set1('nos', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: isAct(entry1.nos) ? '#1565c0' : '#eee', color: isAct(entry1.nos) ? 'white' : '#000', textAlign: 'center' }} placeholder="Nos" />
+      </div>
+      <div style={{ display: 'flex', gap: '5px' }}>
+        <input type="number" value={entry2.dia} onChange={e => set2('dia', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: '1px solid #ddd' }} placeholder="Dia" />
+        <input type="number" value={entry2.nos} onChange={e => set2('nos', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: isAct(entry2.nos) ? '#1565c0' : '#eee', color: isAct(entry2.nos) ? 'white' : '#000', textAlign: 'center' }} placeholder="Nos" />
+      </div>
     </div>
-    <div style={{ display: 'flex', gap: '5px' }}>
-      <input type="number" value={entry2.dia} onChange={e => set2('dia', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: '1px solid #ddd' }} />
-      <input type="number" value={entry2.nos} onChange={e => set2('nos', e.target.value)} style={{ width: '50%', padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: '#1565c0', color: 'white', textAlign: 'center' }} />
-    </div>
-  </div>
-);
+  );
+};
 
 export default BeamBBS;
