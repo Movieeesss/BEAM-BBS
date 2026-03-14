@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Commercial Reference Data from Image 50
 const STEEL_REF: Record<number, { rodsPerBundle: number; bundleWt: number }> = {
   8:  { rodsPerBundle: 10, bundleWt: 47.4 },
   10: { rodsPerBundle: 7,  bundleWt: 51.87 },
@@ -11,8 +10,6 @@ const STEEL_REF: Record<number, { rodsPerBundle: number; bundleWt: number }> = {
   20: { rodsPerBundle: 2,  bundleWt: 59.26 },
   25: { rodsPerBundle: 1,  bundleWt: 46.3 },
 };
-
-const DIAMETERS = [8, 10, 12, 16, 20, 25];
 
 interface BeamRow {
   id: number;
@@ -32,7 +29,7 @@ export default function BeamBBSCalculator() {
   const [rows, setRows] = useState<BeamRow[]>([
     { 
       id: 1, tag: 'B1', width: '230', depth: '380', mainLen: '60', exLen: '30',
-      bot16: '2', bot12: '1', top16: '2', top12: '1', ext16: '2', ext12: '1',
+      bot16: '1', bot12: '1', top16: '1', top12: '1', ext16: '1', ext12: '1',
       stirrupDia: '8', stirrupSp: '6'
     }
   ]);
@@ -45,15 +42,15 @@ export default function BeamBBSCalculator() {
       const d = parseFloat(r.depth) || 0;
       const sp = parseFloat(r.stirrupSp) || 6;
 
-      // Logic: (Length * Nos) / 3.281 to get Meters
-      const m16 = ((mL * (parseFloat(r.bot16)||0)) + (mL * (parseFloat(r.top16)||0)) + (xL * (parseFloat(r.ext16)||0))) / 3.281;
-      const m12 = ((mL * (parseFloat(r.bot12)||0)) + (mL * (parseFloat(r.top12)||0)) + (xL * (parseFloat(r.ext12)||0))) / 3.281;
+      // 1. Calculate Total Running Meters per diameter (Excel Sum Logic)
+      const totalM16 = ((mL * (parseFloat(r.bot16)||0)) + (mL * (parseFloat(r.top16)||0)) + (xL * (parseFloat(r.ext16)||0))) / 3.281;
+      const totalM12 = ((mL * (parseFloat(r.bot12)||0)) + (mL * (parseFloat(r.top12)||0)) + (xL * (parseFloat(r.ext12)||0))) / 3.281;
 
-      // Weight Conversion: (Total Meters / 12.19 / rodsPerBundle) * bundleWt
-      const kg16 = (m16 / 12.19 / STEEL_REF[16].rodsPerBundle) * STEEL_REF[16].bundleWt;
-      const kg12 = (m12 / 12.19 / STEEL_REF[12].rodsPerBundle) * STEEL_REF[12].bundleWt;
+      // 2. Weight Conversion (Rod Length is 12.19m as per your Image 50)
+      const kg16 = (totalM16 / 12.19 / STEEL_REF[16].rodsPerBundle) * STEEL_REF[16].bundleWt;
+      const kg12 = (totalM12 / 12.19 / STEEL_REF[12].rodsPerBundle) * STEEL_REF[12].bundleWt;
 
-      // Stirrup Logic: (2*((W/25.4)+(D/25.4))-6)/12 for Feet
+      // 3. Stirrup Logic (2*((W/25.4)+(D/25.4))-6)/12
       const sCutFt = (2 * ((w / 25.4) + (d / 25.4)) - 6) / 12;
       const sNos = Math.ceil((mL * 12) / sp);
       const sTotalM = (sCutFt * sNos) / 3.281;
@@ -67,8 +64,8 @@ export default function BeamBBSCalculator() {
     results.forEach(res => {
       summary[16] += res.kg16;
       summary[12] += res.kg12;
-      const sD = parseInt(res.stirrupDia) as keyof typeof summary;
-      if (summary[sD] !== undefined) summary[sD] += res.kgS;
+      const sd = parseInt(res.stirrupDia) as keyof typeof summary;
+      if (summary[sd] !== undefined) summary[sd] += res.kgS;
     });
 
     return { results, summary };
@@ -80,7 +77,7 @@ export default function BeamBBSCalculator() {
 
   const generatePDF = () => {
     const doc = new jsPDF();
-    doc.text("BEAM BBS PROJECT REPORT", 105, 15, { align: 'center' });
+    doc.text("BEAM BBS SUMMARY REPORT", 105, 15, { align: 'center' });
     autoTable(doc, {
       startY: 25,
       head: [['Beam', '16mm KG', '12mm KG', 'Stirrups', 'Total KG']],
@@ -89,11 +86,11 @@ export default function BeamBBSCalculator() {
       ]),
       headStyles: { fillColor: [0, 112, 192] }
     });
-    doc.save("Project_Report.pdf");
+    doc.save("Beam_BBS_Report.pdf");
   };
 
-  // UI Styles for exact Design Match
-  const card: React.CSSProperties = { background: '#fff', borderRadius: '20px', padding: '15px', marginBottom: '15px', border: '1px solid #e0e0e0', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' };
+  // Fixed Style Definitions for Vercel
+  const card: React.CSSProperties = { background: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '15px', border: '1px solid #e0e0e0', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' };
   const blueBox: React.CSSProperties = { background: '#e1f5fe', padding: '8px', borderRadius: '12px', textAlign: 'center' };
   const label: React.CSSProperties = { fontSize: '10px', fontWeight: 'bold', color: '#0070c0', display: 'block', marginBottom: '2px' };
   const input: React.CSSProperties = { border: 'none', background: 'transparent', width: '100%', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', outline: 'none' };
@@ -102,7 +99,7 @@ export default function BeamBBSCalculator() {
   const rodInput: React.CSSProperties = { width: '100%', border: 'none', background: '#4db8ff', color: 'white', borderRadius: '5px', textAlign: 'center', fontWeight: 'bold', padding: '4px' };
 
   return (
-    <div style={{ maxWidth: '480px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh', padding: '12px' }}>
+    <div style={{ maxWidth: '480px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh', padding: '10px' }}>
       <header style={{ backgroundColor: '#92d050', padding: '15px', textAlign: 'center', borderRadius: '10px', marginBottom: '15px' }}>
         <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '900' }}>BEAM BBS CALCULATOR</h1>
       </header>
@@ -111,7 +108,7 @@ export default function BeamBBSCalculator() {
         <div key={row.id} style={card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
             <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#0070c0' }}>{row.tag}</span>
-            <button onClick={() => setRows(rows.filter(r => r.id !== row.id))} style={{ background: '#ff4d4d', color: 'white', border: 'none', padding: '4px 10px', borderRadius: '5px', fontSize: '11px', fontWeight: 'bold' }}>REMOVE</button>
+            <button onClick={() => setRows(rows.filter(r => r.id !== row.id))} style={{ background: '#ff4d4d', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', fontSize: '11px', fontWeight: 'bold' }}>REMOVE</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
@@ -157,17 +154,14 @@ export default function BeamBBSCalculator() {
         <div style={sumRow}><span>8mm Steel:</span><span>{computedData.summary[8].toFixed(2)} KG</span></div>
       </div>
 
-      <button onClick={() => setRows([...rows, { ...rows[0], id: Date.now(), tag: `B${rows.length + 1}` }])} style={btnBlue}>+ ADD NEW BEAM</button>
-      <button onClick={generatePDF} style={btnBlack}>DOWNLOAD PROJECT PDF</button>
+      <button onClick={() => setRows([...rows, { ...rows[0], id: Date.now(), tag: `B${rows.length + 1}` }])} style={{ width: '100%', padding: '15px', background: '#0070c0', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', marginBottom: '10px', cursor: 'pointer' }}>+ ADD NEW BEAM</button>
+      <button onClick={generatePDF} style={{ width: '100%', padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', marginBottom: '10px', cursor: 'pointer' }}>DOWNLOAD PROJECT PDF</button>
       <button onClick={() => {
         let msg = `*BEAM BBS REPORT*%0ATotal: ${Object.values(computedData.summary).reduce((a,b)=>a+b,0).toFixed(2)} KG`;
         window.open(`https://wa.me/?text=${msg}`, '_blank');
-      }} style={btnGreen}>SHARE TO WHATSAPP</button>
+      }} style={{ width: '100%', padding: '15px', background: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>SHARE TO WHATSAPP</button>
     </div>
   );
 }
 
 const sumRow = { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px dashed #ccc', fontWeight: 'bold' as const };
-const btnBlue = { width: '100%', padding: '15px', background: '#0070c0', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold' as const, marginBottom: '10px', cursor: 'pointer' };
-const btnBlack = { width: '100%', padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold' as const, marginBottom: '10px', cursor: 'pointer' };
-const btnGreen = { width: '100%', padding: '15px', background: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold' as const, cursor: 'pointer' };
