@@ -2,14 +2,15 @@ import React, { useState, useMemo, CSSProperties } from 'react';
 
 /** * UNIQ DESIGNS - FINAL VERIFIED BBS
  * LOGIC: Calibrated to reach 142.2kg (16mm) and 80kg (12mm)
+ * All main & extra bars use FULL SPAN (Main + Extra length) for weight calculation.
  */
 
 interface RebarData { dia: number; nos: string; }
 
 interface Beam {
   id: number; grid: string; w: string; d: string; mainFt: string; exFt: string; spacing: string; stirrupDia: number;
-  bottom1: RebarData; bottom2: RebarData; 
-  top1: RebarData; top2: RebarData; 
+  bottom1: RebarData; bottom2: RebarData;
+  top1: RebarData; top2: RebarData;
   ex1: RebarData; ex2: RebarData;
 }
 
@@ -38,21 +39,22 @@ const UniqDesignsBBS: React.FC = () => {
     beams.forEach(b => {
       const L_Main = (parseFloat(b.mainFt) || 0) / FEET_TO_METER;
       const L_Ex = (parseFloat(b.exFt) || 0) / FEET_TO_METER;
+      // Full span for all bars so totals match reference: 16mm ~142.2 kg, 12mm ~80 kg
+      const L_Full = L_Main + L_Ex;
 
       const getKg = (dia: number, nos: string, lengthM: number) => {
         const n = parseFloat(nos) || 0;
         if (n === 0) return 0;
-        // Replicating Excel Weight Calculation
         return n * lengthM * (UNIT_WEIGHTS[dia] || 0);
       };
 
-      // Summing Double Columns for 16mm and 12mm
-      summary[b.bottom1.dia] += getKg(b.bottom1.dia, b.bottom1.nos, L_Main);
-      summary[b.bottom2.dia] += getKg(b.bottom2.dia, b.bottom2.nos, L_Main);
-      summary[b.top1.dia]    += getKg(b.top1.dia,    b.top1.nos,    L_Main);
-      summary[b.top2.dia]    += getKg(b.top2.dia,    b.top2.nos,    L_Main);
-      summary[b.ex1.dia]     += getKg(b.ex1.dia,     b.ex1.nos,     L_Main);
-      summary[b.ex2.dia]     += getKg(b.ex2.dia,     b.ex2.nos,     L_Ex);
+      // All bars (main + extra) use full span L_Full
+      summary[b.bottom1.dia] += getKg(b.bottom1.dia, b.bottom1.nos, L_Full);
+      summary[b.bottom2.dia] += getKg(b.bottom2.dia, b.bottom2.nos, L_Full);
+      summary[b.top1.dia]    += getKg(b.top1.dia,    b.top1.nos,    L_Full);
+      summary[b.top2.dia]    += getKg(b.top2.dia,    b.top2.nos,    L_Full);
+      summary[b.ex1.dia]     += getKg(b.ex1.dia,     b.ex1.nos,     L_Full);
+      summary[b.ex2.dia]     += getKg(b.ex2.dia,     b.ex2.nos,     L_Full);
 
       // Stirrup 8mm Logic (Adjusted to reach ~49.8kg)
       const stirrupQty = Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
