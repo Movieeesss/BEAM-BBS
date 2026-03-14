@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, CSSProperties } from 'react';
 
 /**
- * BEAM BBS
+ * UNIQ DESIGNS RENAMED OF BEAM BBS
  * Logic matches Excel "Steel Calculation Automation":
  * - Main bars: Required Bundles × Weight of one bundle (56.88 kg for 16mm, 53.35 kg for 12mm).
  * - Extra bars: bundles = nos × (exFt/mainFt) for col1, nos × (exFt/mainFt)×0.6 for col2.
@@ -34,6 +34,8 @@ interface Beam {
 const BUNDLE_WEIGHT_KG: Record<number, number> = {
   16: 56.88,
   12: 53.35,
+  // 20mm bundle weight taken from Excel-based tool screenshot
+  20: 135.29,
 };
 
 // IS unit weights (kg/m) for stirrups and other diameters
@@ -49,7 +51,8 @@ const UNIT_WEIGHTS: Record<number, number> = {
 const FEET_TO_METER = 3.281;
 const STIRRUP_CUTTING_FT = 3.5; // Excel: 8mm stirrups Cutting Length in Ft.
 
-const APP_TITLE = 'BEAM BBS';
+const APP_TITLE = 'UNIQ DESIGNS RENAMED OF BEAM BBS';
+const DIAMETER_ORDER = [8, 10, 12, 16, 20, 25];
 
 const UniqDesignsBBS: React.FC = () => {
   const initialBeam = (id: number): Beam => ({
@@ -321,9 +324,9 @@ const UniqDesignsBBS: React.FC = () => {
       <footer style={styles.footer}>
         <div style={styles.fTitle}>TOTAL QUANTITY (KG)</div>
         <div style={styles.statRow}>
-          <Stat label="8mm" val={totals[8]} />
-          <Stat label="12mm" val={totals[12]} />
-          <Stat label="16mm" val={totals[16]} />
+          {DIAMETER_ORDER.filter((d) => totals[d] > 0).map((d) => (
+            <Stat key={d} label={`${d}mm`} val={totals[d]} />
+          ))}
         </div>
       </footer>
 
