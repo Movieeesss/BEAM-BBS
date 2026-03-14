@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 
-// --- DATA FROM YOUR REFERENCE SHEET (IMAGE 39) ---
-// These values are the foundation of your entire Excel logic
+// --- DATA FROM YOUR REFERENCE SHEET (EXCEL MATCH) ---
 const REFERENCE_DATA = {
   8:  { unitWeight: 0.400, bundleWeight: 47.4,  rodsInBundle: 10 },
   10: { unitWeight: 0.618, bundleWeight: 51.87, rodsInBundle: 7 },
@@ -12,9 +11,9 @@ const REFERENCE_DATA = {
 };
 
 const FEET_TO_METER = 3.281; 
-const ROD_LENGTH_METER = 12.19; // From Cell I3 (Crucial for error-free sum)
+const ROD_LENGTH_METER = 12.19; // Exact 40ft match from Image 39
 
-const BeamBBSFinal = () => {
+const UniqDesignsBBS = () => {
   const [beams, setBeams] = useState([
     {
       id: Date.now(), grid: 'B1', w: '230', d: '380', mainFt: '60', exFt: '30', spacing: '6',
@@ -38,7 +37,7 @@ const BeamBBSFinal = () => {
     }));
   };
 
-  // --- ERROR-FREE CALCULATION ENGINE ---
+  // --- ENGINE: REPLICATING EXCEL SUMMATION EXACTLY ---
   const totals = useMemo(() => {
     const summary = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
 
@@ -46,15 +45,13 @@ const BeamBBSFinal = () => {
       const L_Main = (parseFloat(b.mainFt) || 0) / FEET_TO_METER;
       const L_Ex = (parseFloat(b.exFt) || 0) / FEET_TO_METER;
 
-      // Excel Logic: (Length * Nos / RodLength / RodsInBundle) * BundleWeight
       const getKg = (dia, nos, lenM) => {
         const n = parseFloat(nos) || 0;
         if (n === 0 || !REFERENCE_DATA[dia]) return 0;
         const ref = REFERENCE_DATA[dia];
-        
-        // This formula replicates your Excel Required Bundles -> Converting Bundles to Kgs
-        const requiredBundles = (lenM * n) / (ROD_LENGTH_METER * ref.rodsInBundle);
-        return requiredBundles * ref.bundleWeight;
+        // The core Excel logic for Required Bundles -> KGs
+        const reqBundles = (lenM * n) / (ROD_LENGTH_METER * ref.rodsInBundle);
+        return reqBundles * ref.bundleWeight;
       };
 
       summary[b.bottom1.dia] += getKg(b.bottom1.dia, b.bottom1.nos, L_Main);
@@ -64,7 +61,7 @@ const BeamBBSFinal = () => {
       summary[b.ex1.dia]     += getKg(b.ex1.dia,     b.ex1.nos,     L_Main);
       summary[b.ex2.dia]     += getKg(b.ex2.dia,     b.ex2.nos,     L_Ex);
 
-      // Stirrup Logic: 8mm Steel
+      // 8mm Stirrups Calculation (Matches Image 33 Logic)
       const stirrupQty = Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
       summary[8] += getKg(8, stirrupQty, 3.5 / FEET_TO_METER);
     });
@@ -72,79 +69,79 @@ const BeamBBSFinal = () => {
   }, [beams]);
 
   return (
-    <div style={{ maxWidth: '100%', padding: '10px', background: '#f4f7fa', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ background: '#1976d2', color: '#fff', padding: '15px', borderRadius: '8px', textAlign: 'center', marginBottom: '15px' }}>
-        <h2 style={{ margin: 0 }}>UNIQ DESIGNS</h2>
-        <span style={{ fontSize: '12px' }}>Structural Steel BBS Automation</span>
-      </div>
+    <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8f9fa', minHeight: '100vh', padding: '10px' }}>
+      <header style={{ background: '#0d6efd', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center', marginBottom: '20px' }}>
+        <h1 style={{ margin: 0, fontSize: '22px' }}>UNIQ DESIGNS</h1>
+        <p style={{ margin: 0, fontSize: '12px', opacity: 0.9 }}>Structural Steel BBS Automation</p>
+      </header>
 
       {beams.map(b => (
-        <div key={b.id} style={{ background: '#fff', padding: '15px', borderRadius: '12px', marginBottom: '15px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <input value={b.grid} onChange={e => updateField(b.id, 'grid', e.target.value)} style={{ border: 'none', borderBottom: '2px solid #1976d2', fontWeight: 'bold', width: '60px' }} />
-            <button onClick={() => setBeams(beams.filter(x => x.id !== b.id))} style={{ color: 'red', border: 'none', background: 'none', fontSize: '12px' }}>REMOVE</button>
+        <div key={b.id} style={{ background: '#fff', borderRadius: '12px', padding: '15px', marginBottom: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+            <input value={b.grid} onChange={e => updateField(b.id, 'grid', e.target.value)} style={{ border: 'none', borderBottom: '2px solid #0d6efd', fontSize: '18px', fontWeight: 'bold', width: '80px', color: '#0d6efd' }} />
+            <button onClick={() => setBeams(beams.filter(x => x.id !== b.id))} style={{ border: 'none', background: 'none', color: '#dc3545', fontSize: '12px', fontWeight: 'bold' }}>REMOVE</button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-            <BoxInput label="W(mm)" val={b.w} set={v => updateField(b.id, 'w', v)} />
-            <BoxInput label="D(mm)" val={b.d} set={v => updateField(b.id, 'd', v)} />
-            <BoxInput label="Main(ft)" val={b.mainFt} set={v => updateField(b.id, 'mainFt', v)} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+            <Field label="W(mm)" val={b.w} set={v => updateField(b.id, 'w', v)} />
+            <Field label="D(mm)" val={b.d} set={v => updateField(b.id, 'd', v)} />
+            <Field label="MAIN(FT)" val={b.mainFt} set={v => updateField(b.id, 'mainFt', v)} />
           </div>
 
-          <RowSection title="BOTTOM" d1={b.bottom1} d2={b.bottom2} update1={(f,v)=>updateField(b.id,`bottom1.${f}`,v)} update2={(f,v)=>updateField(b.id,`bottom2.${f}`,v)} bg="#e3f2fd" />
-          <RowSection title="TOP" d1={b.top1} d2={b.top2} update1={(f,v)=>updateField(b.id,`top1.${f}`,v)} update2={(f,v)=>updateField(b.id,`top2.${f}`,v)} bg="#fff9c4" />
-          <RowSection title="EXTRA" d1={b.ex1} d2={b.ex2} update1={(f,v)=>updateField(b.id,`ex1.${f}`,v)} update2={(f,v)=>updateField(b.id,`ex2.${f}`,v)} bg="#e8f5e9" />
+          <Row title="BOTTOM REBAR" d1={b.bottom1} d2={b.bottom2} update1={(f,v)=>updateField(b.id,`bottom1.${f}`,v)} update2={(f,v)=>updateField(b.id,`bottom2.${f}`,v)} color="#e7f1ff" />
+          <Row title="TOP REBAR" d1={b.top1} d2={b.top2} update1={(f,v)=>updateField(b.id,`top1.${f}`,v)} update2={(f,v)=>updateField(b.id,`top2.${f}`,v)} color="#fff3cd" />
+          <Row title="EXTRA RODS" d1={b.ex1} d2={b.ex2} update1={(f,v)=>updateField(b.id,`ex1.${f}`,v)} update2={(f,v)=>updateField(b.id,`ex2.${f}`,v)} color="#d1e7dd" />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
-            <BoxInput label="Ex Len(ft)" val={b.exFt} set={v => updateField(b.id, 'exFt', v)} />
-            <BoxInput label="Spacing(in)" val={b.spacing} set={v => updateField(b.id, 'spacing', v)} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+            <Field label="EX LEN(FT)" val={b.exFt} set={v => updateField(b.id, 'exFt', v)} />
+            <Field label="SPACING(IN)" val={b.spacing} set={v => updateField(b.id, 'spacing', v)} />
           </div>
         </div>
       ))}
 
-      <button onClick={() => setBeams([...beams, {...beams[0], id: Date.now()}])} style={{ width: '100%', padding: '12px', borderRadius: '8px', background: '#fff', border: '1px dashed #1976d2', color: '#1976d2', fontWeight: 'bold' }}>+ ADD BEAM</button>
+      <button onClick={() => setBeams([...beams, {...beams[0], id: Date.now()}])} style={{ width: '100%', padding: '15px', borderRadius: '10px', background: 'white', border: '2px dashed #0d6efd', color: '#0d6efd', fontWeight: 'bold', marginBottom: '100px' }}>+ ADD ANOTHER BEAM</button>
 
-      {/* FIXED FOOTER TOTALS */}
-      <div style={{ position: 'sticky', bottom: 0, background: '#1976d2', color: '#fff', padding: '15px', borderRadius: '15px 15px 0 0', marginTop: '20px', display: 'flex', justifyContent: 'space-around' }}>
+      {/* FIXED FOOTER TOTALS - MOBILE READY */}
+      <footer style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0d6efd', color: 'white', padding: '15px', borderRadius: '20px 20px 0 0', boxShadow: '0 -5px 15px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
         <Stat dia="8mm" val={totals[8]} />
         <Stat dia="12mm" val={totals[12]} />
         <Stat dia="16mm" val={totals[16]} />
-      </div>
+      </footer>
     </div>
   );
 };
 
-const BoxInput = ({ label, val, set }) => (
-  <div style={{ background: '#f1f3f4', padding: '5px', borderRadius: '5px' }}>
-    <div style={{ fontSize: '9px', fontWeight: 'bold' }}>{label}</div>
-    <input type="number" value={val} onChange={e => set(e.target.value)} style={{ width: '100%', border: 'none', background: 'none', fontWeight: 'bold', outline: 'none' }} />
+const Field = ({ label, val, set }) => (
+  <div style={{ background: '#f1f3f5', padding: '8px', borderRadius: '8px' }}>
+    <label style={{ fontSize: '10px', fontWeight: 'bold', display: 'block', marginBottom: '4px', color: '#495057' }}>{label}</label>
+    <input type="number" value={val} onChange={e => set(e.target.value)} style={{ width: '100%', border: 'none', background: 'none', fontWeight: 'bold', fontSize: '16px', outline: 'none' }} />
   </div>
 );
 
-const RowSection = ({ title, d1, d2, update1, update2, bg }) => (
-  <div style={{ background: bg, padding: '8px', borderRadius: '8px', marginBottom: '8px' }}>
-    <div style={{ fontSize: '10px', fontWeight: 'bold', marginBottom: '5px' }}>{title}</div>
-    <div style={{ display: 'flex', gap: '5px' }}>
-      <InputPair d={d1} up={update1} />
-      <InputPair d={d2} up={update2} />
+const Row = ({ title, d1, d2, update1, update2, color }) => (
+  <div style={{ background: color, padding: '10px', borderRadius: '10px', marginBottom: '10px' }}>
+    <div style={{ fontSize: '10px', fontWeight: 'bold', marginBottom: '8px' }}>{title}</div>
+    <div style={{ display: 'flex', gap: '8px' }}>
+      <Rebar dia={d1.dia} nos={d1.nos} setDia={v=>update1('dia',v)} setNos={v=>update1('nos',v)} />
+      <Rebar dia={d2.dia} nos={d2.nos} setDia={v=>update2('dia',v)} setNos={v=>update2('nos',v)} />
     </div>
   </div>
 );
 
-const InputPair = ({ d, up }) => (
-  <div style={{ display: 'flex', background: '#fff', borderRadius: '4px', border: '1px solid #ccc', overflow: 'hidden', flex: 1 }}>
-    <select value={d.dia} onChange={e => up('dia', parseInt(e.target.value))} style={{ border: 'none', background: '#eee', fontSize: '11px' }}>
-      {[8, 10, 12, 16, 20, 25].map(x => <option key={x} value={x}>{x}ø</option>)}
+const Rebar = ({ dia, nos, setDia, setNos }) => (
+  <div style={{ display: 'flex', flex: 1, background: 'white', borderRadius: '6px', border: '1px solid #ced4da', overflow: 'hidden' }}>
+    <select value={dia} onChange={e=>setDia(parseInt(e.target.value))} style={{ border: 'none', padding: '5px', background: '#e9ecef', fontSize: '14px' }}>
+      {[8,10,12,16,20,25].map(x => <option key={x} value={x}>{x}ø</option>)}
     </select>
-    <input type="number" value={d.nos} onChange={e => up('nos', e.target.value)} style={{ width: '100%', border: 'none', textAlign: 'center', fontWeight: 'bold' }} />
+    <input type="number" value={nos} onChange={e=>setNos(e.target.value)} style={{ width: '100%', border: 'none', textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }} />
   </div>
 );
 
 const Stat = ({ dia, val }) => (
-  <div style={{ textAlign: 'center' }}>
-    <div style={{ fontSize: '10px' }}>{dia}</div>
-    <div style={{ fontWeight: 'bold' }}>{val.toFixed(2)}</div>
+  <div>
+    <div style={{ fontSize: '11px', opacity: 0.8 }}>{dia}</div>
+    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>{val.toFixed(2)}</div>
   </div>
 );
 
-export default BeamBBSFinal;
+export default UniqDesignsBBS;
