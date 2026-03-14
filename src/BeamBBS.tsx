@@ -1,8 +1,8 @@
 import React, { useState, useMemo, CSSProperties } from 'react';
 
 /**
- * UNIQ DESIGNS - STRUCTURAL BBS AUTOMATION
- * Calibrated for 100% Excel Match
+ * UNIQ DESIGNS - FULL STRUCTURAL BBS AUTOMATION
+ * Calibrated for 100% Excel Match & Vercel Build Success
  */
 
 interface RebarData {
@@ -18,6 +18,7 @@ interface Beam {
   mainFt: string;
   exFt: string;
   spacing: string;
+  stirrupDia: number; // Added Stirrup Dia Logic
   bottom1: RebarData;
   bottom2: RebarData;
   top1: RebarData;
@@ -26,36 +27,37 @@ interface Beam {
   ex2: RebarData;
 }
 
-const REFERENCE_DATA: Record<number, { unitWeight: number; bundleWeight: number; rodsInBundle: number }> = {
-  8:  { unitWeight: 0.400, bundleWeight: 47.4,  rodsInBundle: 10 },
-  10: { unitWeight: 0.618, bundleWeight: 51.87, rodsInBundle: 7 },
-  12: { unitWeight: 0.890, bundleWeight: 53.35, rodsInBundle: 5 },
-  16: { unitWeight: 1.590, bundleWeight: 56.88, rodsInBundle: 3 },
-  20: { unitWeight: 2.470, bundleWeight: 59.26, rodsInBundle: 2 },
-  25: { unitWeight: 3.860, bundleWeight: 46.3,  rodsInBundle: 1 }
+const REFERENCE_DATA: Record<number, { bundleWeight: number; rodsInBundle: number }> = {
+  8:  { bundleWeight: 47.4,  rodsInBundle: 10 },
+  10: { bundleWeight: 51.87, rodsInBundle: 7 },
+  12: { bundleWeight: 53.35, rodsInBundle: 5 },
+  16: { bundleWeight: 56.88, rodsInBundle: 3 },
+  20: { bundleWeight: 59.26, rodsInBundle: 2 },
+  25: { bundleWeight: 46.3,  rodsInBundle: 1 }
 };
 
 const FEET_TO_METER = 3.281; 
-const ROD_LENGTH_METER = 12.19; 
+const ROD_LENGTH_METER = 12.19; // Exact 40ft standard
 
 const UniqDesignsBBS: React.FC = () => {
-  const [beams, setBeams] = useState<Beam[]>([
-    {
-      id: Date.now(),
-      grid: 'B1',
-      w: '230',
-      d: '380',
-      mainFt: '60',
-      exFt: '30',
-      spacing: '6',
-      bottom1: { dia: 16, nos: '1' },
-      bottom2: { dia: 12, nos: '1' },
-      top1: { dia: 16, nos: '1' },
-      top2: { dia: 12, nos: '1' },
-      ex1: { dia: 16, nos: '1' },
-      ex2: { dia: 12, nos: '1' }
-    }
-  ]);
+  const initialBeam = (id: number): Beam => ({
+    id,
+    grid: `B${id}`,
+    w: '230',
+    d: '380',
+    mainFt: '60',
+    exFt: '30',
+    spacing: '6',
+    stirrupDia: 8,
+    bottom1: { dia: 16, nos: '1' },
+    bottom2: { dia: 12, nos: '1' },
+    top1: { dia: 16, nos: '1' },
+    top2: { dia: 12, nos: '1' },
+    ex1: { dia: 16, nos: '1' },
+    ex2: { dia: 12, nos: '1' }
+  });
+
+  const [beams, setBeams] = useState<Beam[]>([initialBeam(Date.now())]);
 
   const updateField = (id: number, path: string, val: string | number) => {
     setBeams(prev => prev.map(b => {
@@ -94,30 +96,35 @@ const UniqDesignsBBS: React.FC = () => {
       summary[b.ex2.dia]     += getKg(b.ex2.dia,     b.ex2.nos,     L_Ex);
 
       const stirrupQty = Math.floor(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
-      summary[8] += getKg(8, stirrupQty.toString(), 3.5 / FEET_TO_METER);
+      summary[b.stirrupDia] += getKg(b.stirrupDia, stirrupQty.toString(), 3.5 / FEET_TO_METER);
     });
     return summary;
   }, [beams]);
+
+  const shareToWhatsApp = () => {
+    let text = `*UNIQ DESIGNS - BBS SUMMARY*\n\n`;
+    Object.entries(totals).forEach(([dia, kg]) => {
+      if (kg > 0) text += `• ${dia}mm Steel: ${kg.toFixed(2)} KG\n`;
+    });
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
 
   return (
     <div style={styles.container}>
       <header style={styles.header}>
         <h1 style={styles.title}>UNIQ DESIGNS</h1>
-        <p style={styles.subtitle}>Structural Steel BBS Automation</p>
+        <div style={styles.btnRowHeader}>
+          <button onClick={shareToWhatsApp} style={styles.shareBtn}>SHARE WHATSAPP</button>
+          <button onClick={() => setBeams([initialBeam(Date.now())])} style={styles.clearBtn}>CLEAR ALL</button>
+        </div>
       </header>
 
       {beams.map(b => (
         <div key={b.id} style={styles.card}>
           <div style={styles.cardHeader}>
-            <input 
-              value={b.grid} 
-              onChange={e => updateField(b.id, 'grid', e.target.value)} 
-              style={styles.gridInput} 
-            />
-            <button 
-              onClick={() => setBeams(beams.filter(x => x.id !== b.id))} 
-              style={styles.removeBtn}
-            >REMOVE</button>
+            <input value={b.grid} onChange={e => updateField(b.id, 'grid', e.target.value)} style={styles.gridInput} />
+            <button onClick={() => setBeams(beams.filter(x => x.id !== b.id))} style={styles.removeBtn}>REMOVE</button>
           </div>
 
           <div style={styles.dimRow}>
@@ -133,14 +140,17 @@ const UniqDesignsBBS: React.FC = () => {
           <div style={styles.dimRow}>
             <Field label="EX LEN(FT)" val={b.exFt} set={v => updateField(b.id, 'exFt', v)} />
             <Field label="SPACING(IN)" val={b.spacing} set={v => updateField(b.id, 'spacing', v)} />
+            <div style={styles.fieldBox}>
+                <label style={styles.fieldLabel}>STIRRUP DIA</label>
+                <select value={b.stirrupDia} onChange={e => updateField(b.id, 'stirrupDia', parseInt(e.target.value))} style={styles.fieldSelect}>
+                    {[8, 10, 12].map(d => <option key={d} value={d}>{d}mm</option>)}
+                </select>
+            </div>
           </div>
         </div>
       ))}
 
-      <button 
-        onClick={() => setBeams([...beams, {...beams[0], id: Date.now(), grid: `B${beams.length + 1}`}])} 
-        style={styles.addBtn}
-      >+ ADD ANOTHER BEAM</button>
+      <button onClick={() => setBeams([...beams, initialBeam(Date.now())])} style={styles.addBtn}>+ ADD BEAM</button>
 
       <footer style={styles.footer}>
         <div style={styles.footerLabel}>PROJECT TOTALS (KG)</div>
@@ -154,17 +164,11 @@ const UniqDesignsBBS: React.FC = () => {
   );
 };
 
-// --- Sub-Components ---
-
+// --- Components ---
 const Field: React.FC<{ label: string; val: string; set: (v: string) => void }> = ({ label, val, set }) => (
   <div style={styles.fieldBox}>
     <label style={styles.fieldLabel}>{label}</label>
-    <input 
-      type="number" 
-      value={val} 
-      onChange={e => set(e.target.value)} 
-      style={styles.fieldInput} 
-    />
+    <input type="number" value={val} onChange={e => set(e.target.value)} style={styles.fieldInput} />
   </div>
 );
 
@@ -183,12 +187,7 @@ const RebarPair: React.FC<{ dia: number; nos: string; setDia: (v: number) => voi
     <select value={dia} onChange={e => setDia(parseInt(e.target.value))} style={styles.select}>
       {[8, 10, 12, 16, 20, 25].map(x => <option key={x} value={x}>{x}ø</option>)}
     </select>
-    <input 
-      type="number" 
-      value={nos} 
-      onChange={e => setNos(e.target.value)} 
-      style={styles.nosInput} 
-    />
+    <input type="number" value={nos} onChange={e => setNos(e.target.value)} style={styles.nosInput} />
   </div>
 );
 
@@ -199,33 +198,36 @@ const Stat: React.FC<{ label: string; val: number }> = ({ label, val }) => (
   </div>
 );
 
-// --- STYLES OBJECT WITH FIXED TYPESCRIPT TYPES ---
+// --- CSS STYLES (Vercel Fix) ---
 const styles: Record<string, CSSProperties> = {
-  container: { maxWidth: '800px', margin: '0 auto', background: '#f4f7f9', minHeight: '100vh', padding: '10px', paddingBottom: '120px', fontFamily: 'Segoe UI, Roboto, sans-serif' },
-  header: { background: '#0d6efd', color: 'white', padding: '20px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' },
-  title: { margin: 0, fontSize: '24px' },
-  subtitle: { margin: '5px 0 0', fontSize: '12px', opacity: 0.8 },
-  card: { background: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '20px', boxShadow: '0 2px 15px rgba(0,0,0,0.05)', border: '1px solid #edf2f7' },
-  cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' },
-  gridInput: { border: 'none', borderBottom: '2px solid #0d6efd', fontSize: '18px', fontWeight: 'bold', width: '80px', color: '#0d6efd', outline: 'none' },
-  removeBtn: { border: 'none', background: 'none', color: '#dc3545', fontSize: '12px', fontWeight: 'bold' },
-  dimRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '15px' },
-  fieldBox: { background: '#f8fafc', padding: '8px', borderRadius: '10px', border: '1px solid #e2e8f0' },
-  fieldLabel: { fontSize: '10px', fontWeight: 'bold', display: 'block', color: '#64748b', marginBottom: '4px' },
-  fieldInput: { width: '100%', border: 'none', background: 'none', fontWeight: 'bold', fontSize: '16px', outline: 'none', textAlign: 'center' },
-  section: { padding: '12px', borderRadius: '12px', marginBottom: '12px' },
-  sectionTitle: { fontSize: '11px', fontWeight: '800', marginBottom: '8px', color: '#334155' },
-  rebarRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' },
-  rebarPair: { display: 'flex', background: '#fff', borderRadius: '8px', border: '1px solid #cbd5e1', overflow: 'hidden' },
-  select: { border: 'none', background: '#f1f5f9', padding: '5px 10px', fontSize: '14px', borderRight: '1px solid #cbd5e1' },
-  nosInput: { width: '100%', border: 'none', textAlign: 'center', fontWeight: 'bold', fontSize: '16px', outline: 'none' },
-  addBtn: { width: '100%', padding: '15px', borderRadius: '12px', background: 'white', border: '2px dashed #0d6efd', color: '#0d6efd', fontWeight: 'bold' },
-  footer: { position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0d6efd', color: 'white', padding: '15px 20px', borderRadius: '25px 25px 0 0', zIndex: 100 },
-  footerLabel: { textAlign: 'center', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.9 },
-  statRow: { display: 'flex', justifyContent: 'space-around', alignItems: 'center' },
+  container: { maxWidth: '600px', margin: '0 auto', background: '#f4f7f9', minHeight: '100vh', padding: '10px 10px 120px' },
+  header: { background: '#0d6efd', color: 'white', padding: '15px', borderRadius: '12px', textAlign: 'center', marginBottom: '15px' },
+  title: { margin: '0 0 10px', fontSize: '20px' },
+  btnRowHeader: { display: 'flex', gap: '10px', justifyContent: 'center' },
+  shareBtn: { padding: '5px 10px', background: '#25D366', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', fontSize: '10px' },
+  clearBtn: { padding: '5px 10px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', fontSize: '10px' },
+  card: { background: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '15px', border: '1px solid #edf2f7' },
+  cardHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '10px' },
+  gridInput: { border: 'none', borderBottom: '2px solid #0d6efd', fontWeight: 'bold', width: '60px', outline: 'none' },
+  removeBtn: { border: 'none', background: 'none', color: '#dc3545', fontWeight: 'bold', fontSize: '10px' },
+  dimRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' },
+  fieldBox: { background: '#f8fafc', padding: '5px', borderRadius: '8px', border: '1px solid #e2e8f0' },
+  fieldLabel: { fontSize: '8px', fontWeight: 'bold', color: '#64748b', display: 'block' },
+  fieldInput: { width: '100%', border: 'none', background: 'none', fontWeight: 'bold', fontSize: '14px', textAlign: 'center', outline: 'none' },
+  fieldSelect: { width: '100%', border: 'none', background: 'none', fontWeight: 'bold', fontSize: '12px', outline: 'none' },
+  section: { padding: '10px', borderRadius: '10px', marginBottom: '10px' },
+  sectionTitle: { fontSize: '9px', fontWeight: 'bold', marginBottom: '5px' },
+  rebarRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' },
+  rebarPair: { display: 'flex', background: '#fff', borderRadius: '5px', border: '1px solid #cbd5e1', overflow: 'hidden' },
+  select: { border: 'none', background: '#f1f5f9', fontSize: '11px', padding: '2px' },
+  nosInput: { width: '100%', border: 'none', textAlign: 'center', fontWeight: 'bold', outline: 'none' },
+  addBtn: { width: '100%', padding: '12px', borderRadius: '10px', background: '#fff', border: '2px dashed #0d6efd', color: '#0d6efd', fontWeight: 'bold' },
+  footer: { position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0d6efd', color: 'white', padding: '15px', borderRadius: '20px 20px 0 0', zIndex: 100 },
+  footerLabel: { textAlign: 'center', fontSize: '10px', fontWeight: 'bold', marginBottom: '5px' },
+  statRow: { display: 'flex', justifyContent: 'space-around' },
   statBox: { textAlign: 'center' },
-  statLabel: { fontSize: '11px', opacity: 0.8, marginBottom: '2px' },
-  statVal: { fontSize: '20px', fontWeight: 'bold' }
+  statLabel: { fontSize: '10px', opacity: 0.8 },
+  statVal: { fontSize: '18px', fontWeight: 'bold' }
 };
 
 export default UniqDesignsBBS;
