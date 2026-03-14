@@ -12,18 +12,16 @@ const STEEL_REF: Record<number, { rodsPerBundle: number; bundleWt: number }> = {
   25: { rodsPerBundle: 1,  bundleWt: 46.3 },
 };
 
-const DIAMETERS = [8, 10, 12, 16, 20, 25];
-
 interface BeamRow {
   id: number;
   tag: string;
   width: string;
   depth: string;
-  mainLen: string; // Used for Top & Bottom
-  exLen: string;   // Used for Extra bars
-  botDia: string; botNos: string;
-  topDia: string; topNos: string;
-  extDia: string; extNos: string;
+  mainLen: string;
+  exLen: string;
+  bot16: string; bot12: string; // Dual Column Bottom
+  top16: string; top12: string; // Dual Column Top
+  ext16: string; ext12: string; // Dual Column Extra
   stirrupDia: string;
   stirrupSp: string;
 }
@@ -32,7 +30,7 @@ export default function BeamBBSCalculator() {
   const [rows, setRows] = useState<BeamRow[]>([
     { 
       id: 1, tag: 'B1', width: '230', depth: '380', mainLen: '60', exLen: '30',
-      botDia: '16', botNos: '2', topDia: '12', topNos: '2', extDia: '16', extNos: '2',
+      bot16: '2', bot12: '1', top16: '2', top12: '1', ext16: '2', ext12: '1',
       stirrupDia: '8', stirrupSp: '6'
     }
   ]);
@@ -45,39 +43,37 @@ export default function BeamBBSCalculator() {
       const d = parseFloat(r.depth) || 0;
       const sp = parseFloat(r.stirrupSp) || 6;
 
-      const calcWeight = (lenFt: number, nos: string, dia: string) => {
-        const count = parseFloat(nos) || 0;
-        const dNum = parseInt(dia);
-        if (count === 0 || !STEEL_REF[dNum]) return 0;
-        // Logic: (Running Length / Rod Length 12.19m / rods per bundle) * bundle weight
-        const totalM = (lenFt * count) / 3.281;
-        const ref = STEEL_REF[dNum];
+      const getKg = (len: number, nos: string, dia: number) => {
+        const n = parseFloat(nos) || 0;
+        if (n === 0) return 0;
+        const totalM = (len * n) / 3.281;
+        const ref = STEEL_REF[dia];
+        // Exact commercial formula: (Total Meters / Rod length 12.19 / rods per bundle) * bundle weight
         return (totalM / 12.19 / ref.rodsPerBundle) * ref.bundleWt;
       };
 
-      const wBot = calcWeight(mainL, r.botNos, r.botDia);
-      const wTop = calcWeight(mainL, r.topNos, r.topDia);
-      const wExt = calcWeight(exL, r.extNos, r.extDia);
+      // Accurate Summing for 16mm across all sections
+      const kg16 = getKg(mainL, r.bot16, 16) + getKg(mainL, r.top16, 16) + getKg(exL, r.ext16, 16);
+      
+      // Accurate Summing for 12mm across all sections
+      const kg12 = getKg(mainL, r.bot12, 12) + getKg(mainL, r.top12, 12) + getKg(exL, r.ext12, 12);
 
-      // Stirrup Math: (2*((W/25.4)+(D/25.4))-6)/12
+      // Stirrup Logic
       const sCutFt = (2 * ((w / 25.4) + (d / 25.4)) - 6) / 12;
       const sNos = Math.ceil((mainL * 12) / sp);
       const sTotalM = (sCutFt * sNos) / 3.281;
-      const sRef = STEEL_REF[parseInt(r.stirrupDia)] || STEEL_REF[8];
-      const wStirrup = (sTotalM / 12.19 / sRef.rodsPerBundle) * sRef.bundleWt;
+      const sRef = STEEL_REF[parseInt(r.stirrupDia)];
+      const kgS = (sTotalM / 12.19 / sRef.rodsPerBundle) * sRef.bundleWt;
 
-      return { ...r, wBot, wTop, wExt, wStirrup, rowTotal: wBot + wTop + wExt + wStirrup };
+      return { ...r, kg16, kg12, kgS, total: kg16 + kg12 + kgS };
     });
 
-    const summary: Record<string, number> = {};
+    const summary = { 8: 0, 10: 0, 12: 0, 16: 0 };
     results.forEach(res => {
-      const items = [
-        { d: res.botDia, w: res.wBot }, { d: res.topDia, w: res.wTop },
-        { d: res.extDia, w: res.wExt }, { d: res.stirrupDia, w: res.wStirrup }
-      ];
-      items.forEach(item => {
-        if (item.w > 0) summary[item.d] = (summary[item.d] || 0) + item.w;
-      });
+      summary[16] += res.kg16;
+      summary[12] += res.kg12;
+      const sD = parseInt(res.stirrupDia) as keyof typeof summary;
+      if (summary[sD] !== undefined) summary[sD] += res.kgS;
     });
 
     return { results, summary };
@@ -89,106 +85,94 @@ export default function BeamBBSCalculator() {
 
   const generatePDF = () => {
     const doc = new jsPDF();
-    doc.setFontSize(18); doc.text("BEAM BBS PROJECT REPORT", 105, 15, { align: 'center' });
+    doc.text("BEAM BBS DUAL COLUMN REPORT", 105, 15, { align: 'center' });
     autoTable(doc, {
       startY: 25,
-      head: [['Beam', 'Size', 'Bottom', 'Top', 'Extra', 'Stirrups', 'Weight']],
+      head: [['Beam', '16mm KG', '12mm KG', 'Stirrups', 'Total KG']],
       body: computedData.results.map(r => [
-        r.tag, `${r.width}x${r.depth}`, `${r.botNos}-${r.botDia}mm`, `${r.topNos}-${r.topDia}mm`, 
-        `${r.extNos}-${r.extDia}mm`, `${r.stirrupDia}mm@${r.stirrupSp}"`, `${r.rowTotal.toFixed(2)}kg`
+        r.tag, r.kg16.toFixed(2), r.kg12.toFixed(2), r.kgS.toFixed(2), r.total.toFixed(2)
       ]),
       headStyles: { fillColor: [0, 112, 192] }
     });
-    doc.save(`Beam_BBS_Report_${Date.now()}.pdf`);
+    doc.save("Beam_BBS_Report.pdf");
   };
 
-  const shareToWhatsApp = () => {
-    let msg = `*BEAM BBS FINAL REPORT*%0A%0A`;
+  const shareWhatsApp = () => {
+    let msg = `*BEAM BBS REPORT*%0A%0A`;
     computedData.results.forEach(r => {
-      msg += `*${r.tag}*: ${r.width}x${r.depth} | *${r.rowTotal.toFixed(2)} KG*%0A`;
-    });
-    msg += `%0A*TOTAL SUMMARY:*%0A`;
-    Object.entries(computedData.summary).forEach(([d, w]) => {
-      msg += `${d}mm Steel: ${w.toFixed(2)} KG%0A`;
+      msg += `*${r.tag}*: 16mm(${r.kg16.toFixed(1)}kg) 12mm(${r.kg12.toFixed(1)}kg) | *Total: ${r.total.toFixed(2)}kg*%0A`;
     });
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
-  // UI Styles
-  const cardContainer: React.CSSProperties = { backgroundColor: '#00b0f0', borderRadius: '15px', marginBottom: '15px', overflow: 'hidden', border: '2px solid #0070c0', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' };
-  const inputCell: React.CSSProperties = { background: '#fff', padding: '6px', borderRadius: '10px', display: 'flex', flexDirection: 'column' };
-  const blueCell: React.CSSProperties = { background: '#e1f5fe', padding: '6px', borderRadius: '10px', display: 'flex', flexDirection: 'column' };
-  const label: React.CSSProperties = { fontSize: '10px', fontWeight: 'bold', color: '#666', marginBottom: '2px' };
-  const mainInput: React.CSSProperties = { border: 'none', fontSize: '16px', fontWeight: '900', width: '100%', outline: 'none' };
-  const subInput: React.CSSProperties = { border: 'none', fontSize: '16px', fontWeight: '900', width: '50%', background: 'transparent', textAlign: 'center', outline: 'none' };
-  const select: React.CSSProperties = { border: 'none', fontSize: '14px', fontWeight: 'bold', background: 'transparent', width: '50%', outline: 'none' };
+  // Explicit TypeScript CSS Properties
+  const card: React.CSSProperties = { background: '#00b0f0', borderRadius: '15px', marginBottom: '15px', border: '2px solid #0070c0', overflow: 'hidden' };
+  const whiteBox: React.CSSProperties = { background: '#fff', padding: '6px', borderRadius: '10px' };
+  const blueBox: React.CSSProperties = { background: '#e1f5fe', padding: '6px', borderRadius: '10px' };
+  const label: React.CSSProperties = { fontSize: '10px', fontWeight: 'bold', color: '#666', display: 'block' };
+  const input: React.CSSProperties = { border: 'none', fontSize: '16px', fontWeight: '900', width: '100%', outline: 'none' };
+  const dualInput: React.CSSProperties = { border: 'none', fontSize: '16px', fontWeight: '900', width: '50%', textAlign: 'center', background: 'transparent', outline: 'none' };
+  const tagIn: React.CSSProperties = { background: 'rgba(255,255,255,0.2)', border: '1px solid #fff', color: '#fff', fontWeight: 'bold', width: '80px', borderRadius: '4px', padding: '2px' };
 
   return (
-    <div style={{ maxWidth: '480px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh', paddingBottom: '40px' }}>
+    <div style={{ maxWidth: '480px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh', paddingBottom: '30px' }}>
       <header style={{ backgroundColor: '#92d050', padding: '18px', textAlign: 'center', borderBottom: '4px solid #76b041' }}>
-        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: '#000' }}>BEAM BBS CALCULATOR</h1>
+        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '900' }}>BEAM BBS CALCULATOR</h1>
       </header>
 
       <div style={{ padding: '12px' }}>
-        {rows.map((row, idx) => (
-          <div key={row.id} style={cardContainer}>
-            <div style={{ backgroundColor: '#0070c0', color: '#fff', padding: '10px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <input value={row.tag} onChange={e => updateRow(row.id, 'tag', e.target.value)} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid #fff', color: '#fff', fontWeight: 'bold', width: '80px', borderRadius: '4px', padding: '2px 5px', outline: 'none' }} />
-              <button onClick={() => setRows(rows.filter(r => r.id !== row.id))} style={{ background: 'red', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>REMOVE</button>
+        {rows.map((row, idx) => {
+          const res = computedData.results[idx];
+          return (
+            <div key={row.id} style={card}>
+              <div style={{ backgroundColor: '#0070c0', color: '#fff', padding: '10px 15px', display: 'flex', justifyContent: 'space-between' }}>
+                <input value={row.tag} onChange={e => updateRow(row.id, 'tag', e.target.value)} style={tagIn} />
+                <button onClick={() => setRows(rows.filter(r => r.id !== row.id))} style={{ background: 'red', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', padding: '2px 8px' }}>REMOVE</button>
+              </div>
+
+              <div style={{ padding: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <div style={whiteBox}><label style={label}>Width(mm)</label><input value={row.width} onChange={e=>updateRow(row.id,'width',e.target.value)} style={input}/></div>
+                <div style={whiteBox}><label style={label}>Depth(mm)</label><input value={row.depth} onChange={e=>updateRow(row.id,'depth',e.target.value)} style={input}/></div>
+                <div style={whiteBox}><label style={label}>Main(Ft)</label><input value={row.mainLen} onChange={e=>updateRow(row.id,'mainLen',e.target.value)} style={input}/></div>
+
+                {/* DUAL COLUMN INPUTS */}
+                <div style={blueBox}><label style={label}>Bot 16 / 12</label>
+                  <div style={{display:'flex'}}><input value={row.bot16} onChange={e=>updateRow(row.id,'bot16',e.target.value)} style={dualInput}/><input value={row.bot12} onChange={e=>updateRow(row.id,'bot12',e.target.value)} style={dualInput}/></div>
+                </div>
+                <div style={blueBox}><label style={label}>Top 16 / 12</label>
+                  <div style={{display:'flex'}}><input value={row.top16} onChange={e=>updateRow(row.id,'top16',e.target.value)} style={dualInput}/><input value={row.top12} onChange={e=>updateRow(row.id,'top12',e.target.value)} style={dualInput}/></div>
+                </div>
+                <div style={blueBox}><label style={label}>Ext 16 / 12</label>
+                  <div style={{display:'flex'}}><input value={row.ext16} onChange={e=>updateRow(row.id,'ext16',e.target.value)} style={dualInput}/><input value={row.ext12} onChange={e=>updateRow(row.id,'ext12',e.target.value)} style={dualInput}/></div>
+                </div>
+
+                <div style={whiteBox}><label style={label}>Ex Len(ft)</label><input value={row.exLen} onChange={e=>updateRow(row.id,'exLen',e.target.value)} style={input}/></div>
+                <div style={whiteBox}><label style={label}>Spacing(in)</label><input value={row.stirrupSp} onChange={e=>updateRow(row.id,'stirrupSp',e.target.value)} style={input}/></div>
+                <div style={whiteBox}><label style={label}>Stirrup Dia</label>
+                    <select value={row.stirrupDia} onChange={e=>updateRow(row.id,'stirrupDia',e.target.value)} style={{border:'none', fontWeight:'900', width:'100%'}}>
+                        <option value="8">8mm</option><option value="10">10mm</option>
+                    </select>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#ffff00', padding: '12px 15px', display: 'flex', justifyContent: 'space-between', fontWeight: '900', borderTop: '2px solid #0070c0' }}>
+                <span>STIRRUPS: {row.stirrupDia}mm @ {row.stirrupSp}"</span>
+                <span>{res.total.toFixed(2)} KG</span>
+              </div>
             </div>
-
-            <div style={{ padding: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              <div style={inputCell}><label style={label}>Width(mm)</label><input value={row.width} onChange={e=>updateRow(row.id,'width',e.target.value)} style={mainInput}/></div>
-              <div style={inputCell}><label style={label}>Depth(mm)</label><input value={row.depth} onChange={e=>updateRow(row.id,'depth',e.target.value)} style={mainInput}/></div>
-              <div style={inputCell}><label style={label}>Main(Ft)</label><input value={row.mainLen} onChange={e=>updateRow(row.id,'mainLen',e.target.value)} style={mainInput}/></div>
-
-              <div style={blueCell}><label style={label}>Bottom Dia/Nos</label>
-                <div style={{display:'flex'}}>
-                  <select value={row.botDia} onChange={e=>updateRow(row.id,'botDia',e.target.value)} style={select}>{DIAMETERS.map(d=><option key={d} value={d}>{d}mm</option>)}</select>
-                  <input value={row.botNos} onChange={e=>updateRow(row.id,'botNos',e.target.value)} style={subInput}/>
-                </div>
-              </div>
-              <div style={blueCell}><label style={label}>Top Dia/Nos</label>
-                <div style={{display:'flex'}}>
-                  <select value={row.topDia} onChange={e=>updateRow(row.id,'topDia',e.target.value)} style={select}>{DIAMETERS.map(d=><option key={d} value={d}>{d}mm</option>)}</select>
-                  <input value={row.topNos} onChange={e=>updateRow(row.id,'topNos',e.target.value)} style={subInput}/>
-                </div>
-              </div>
-              <div style={blueCell}><label style={label}>Extra Dia/Nos</label>
-                <div style={{display:'flex'}}>
-                  <select value={row.extDia} onChange={e=>updateRow(row.id,'extDia',e.target.value)} style={select}>{DIAMETERS.map(d=><option key={d} value={d}>{d}mm</option>)}</select>
-                  <input value={row.extNos} onChange={e=>updateRow(row.id,'extNos',e.target.value)} style={subInput}/>
-                </div>
-              </div>
-
-              <div style={inputCell}><label style={label}>Ex Len(ft)</label><input value={row.exLen} onChange={e=>updateRow(row.id,'exLen',e.target.value)} style={mainInput}/></div>
-              <div style={inputCell}><label style={label}>Stirrup Dia/Sp</label>
-                <div style={{display:'flex'}}>
-                  <select value={row.stirrupDia} onChange={e=>updateRow(row.id,'stirrupDia',e.target.value)} style={select}>{[8,10].map(d=><option key={d} value={d}>{d}mm</option>)}</select>
-                  <input value={row.stirrupSp} onChange={e=>updateRow(row.id,'stirrupSp',e.target.value)} style={subInput}/>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: '#ffff00', padding: '12px 15px', display: 'flex', justifyContent: 'space-between', fontWeight: '900', borderTop: '2px solid #0070c0' }}>
-              <span>STIRRUPS: {row.stirrupDia}mm @ {row.stirrupSp}"</span>
-              <span>{computedData.results[idx].rowTotal.toFixed(2)} KG</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div style={{ background: '#fff', border: '2px solid #0070c0', borderRadius: '15px', padding: '15px', marginBottom: '15px' }}>
-          <h2 style={{ fontSize: '18px', textAlign: 'center', color: '#0070c0', margin: '0 0 15px 0' }}>TOTAL BEAM STEEL</h2>
-          {Object.entries(computedData.summary).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([dia, kg]) => (
-            <div key={dia} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px dashed #ccc', fontWeight: 'bold' }}>
-              <span>{dia}mm Steel:</span><span>{kg.toFixed(2)} KG</span>
-            </div>
-          ))}
+          <h2 style={{ fontSize: '18px', textAlign: 'center', color: '#0070c0', margin: '0 0 10px 0' }}>TOTAL BEAM STEEL</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px dashed #ccc', fontWeight: 'bold' }}><span>16mm Steel:</span><span>{computedData.summary[16].toFixed(2)} KG</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px dashed #ccc', fontWeight: 'bold' }}><span>12mm Steel:</span><span>{computedData.summary[12].toFixed(2)} KG</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: 'bold' }}><span>8mm Steel:</span><span>{computedData.summary[8].toFixed(2)} KG</span></div>
         </div>
 
         <button onClick={() => setRows([...rows, { ...rows[0], id: Date.now(), tag: `B${rows.length + 1}` }])} style={{ width: '100%', padding: '15px', background: '#0070c0', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', marginBottom: '10px', cursor: 'pointer' }}>+ ADD NEW BEAM</button>
         <button onClick={generatePDF} style={{ width: '100%', padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', marginBottom: '10px', cursor: 'pointer' }}>DOWNLOAD PROJECT PDF</button>
-        <button onClick={shareToWhatsApp} style={{ width: '100%', padding: '15px', background: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>SHARE TO WHATSAPP</button>
+        <button onClick={shareWhatsApp} style={{ width: '100%', padding: '15px', background: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>SHARE TO WHATSAPP</button>
       </div>
     </div>
   );
