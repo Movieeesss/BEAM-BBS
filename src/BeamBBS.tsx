@@ -32,10 +32,12 @@ interface Beam {
 
 // Excel "Weight of one bundle in kg used in sheets"
 const BUNDLE_WEIGHT_KG: Record<number, number> = {
-  16: 56.88,
+  8: 47.4,
+  10: 51.87,
   12: 53.35,
-  // 20mm bundle weight taken from Excel-based tool screenshot
-  20: 135.29,
+  16: 56.88,
+  20: 59.26,
+  25: 46.3,
 };
 
 // IS unit weights (kg/m) for stirrups and other diameters
@@ -49,7 +51,8 @@ const UNIT_WEIGHTS: Record<number, number> = {
 };
 
 const FEET_TO_METER = 3.281;
-const STIRRUP_CUTTING_FT = 3.5; // Excel: 8mm stirrups Cutting Length in Ft.
+const ROD_LEN_M = 12.19; // Exact 40ft rod length from Reference sheet
+const STIRRUP_CUTTING_FT = 3.5; 
 
 const APP_TITLE = 'BEAM BBS';
 const DIAMETER_ORDER = [8, 10, 12, 16, 20, 25];
@@ -75,6 +78,7 @@ const UniqDesignsBBS: React.FC = () => {
   const [beams, setBeams] = useState<Beam[]>(() => [initialBeam(Date.now())]);
   const printRef = useRef<HTMLDivElement>(null);
 
+  // --- THE BRAIN: FIXED CALCULATION ENGINE ---
   const totals = useMemo(() => {
     const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
 
@@ -83,40 +87,30 @@ const UniqDesignsBBS: React.FC = () => {
       const exFt = parseFloat(b.exFt) || 0;
       const mainM = mainFt / FEET_TO_METER;
       const exM = exFt / FEET_TO_METER;
-      const L_Full = mainM + exM;
 
-      const n = (key: keyof Beam, col: '1' | '2') => {
-        const data = b[key] as RebarData;
-        return parseFloat(data?.nos as string) || 0;
+      // FIXED LOGIC: (Length * Nos) / (RodLength * RodsInBundle) * BundleWeight
+      const getKg = (dia: number, nos: string, lengthM: number) => {
+        const n = parseFloat(nos) || 0;
+        if (n === 0) return 0;
+        
+        // Rods per bundle mapping from Excel reference
+        const rodsInBundle = dia === 8 ? 10 : dia === 10 ? 7 : dia === 12 ? 5 : dia === 16 ? 3 : dia === 20 ? 2 : 1;
+        const bundleWt = BUNDLE_WEIGHT_KG[dia] || 0;
+        
+        // Formula: (Total length / 12.19 / RodsPerBundle) * BundleWeight
+        return (lengthM * n / (ROD_LEN_M * rodsInBundle)) * bundleWt;
       };
 
-      const bundleKg = (dia: number, bundles: number): number => {
-        const bw = BUNDLE_WEIGHT_KG[dia];
-        if (bw !== undefined) return bundles * bw;
-        return bundles * L_Full * (UNIT_WEIGHTS[dia] ?? 0);
-      };
+      summary[b.bottom1.dia] += getKg(b.bottom1.dia, b.bottom1.nos, mainM);
+      summary[b.bottom2.dia] += getKg(b.bottom2.dia, b.bottom2.nos, mainM);
+      summary[b.top1.dia]    += getKg(b.top1.dia,    b.top1.nos,    mainM);
+      summary[b.top2.dia]    += getKg(b.top2.dia,    b.top2.nos,    mainM);
+      summary[b.ex1.dia]     += getKg(b.ex1.dia,     b.ex1.nos,     mainM);
+      summary[b.ex2.dia]     += getKg(b.ex2.dia,     b.ex2.nos,     exM);
 
-      const ratio = mainFt > 0 ? exFt / mainFt : 0;
-      const nosBottom1 = n('bottom1', '1');
-      const nosBottom2 = n('bottom2', '2');
-      const nosTop1 = n('top1', '1');
-      const nosTop2 = n('top2', '2');
-      const ex1Bundles = n('ex1', '1') * ratio;
-      const ex2Bundles = n('ex2', '2') * ratio * 0.6;
-      const bundles12 = (nos: number) => nos * 0.6;
-
-      summary[b.bottom1.dia] += bundleKg(b.bottom1.dia, nosBottom1);
-      summary[b.bottom2.dia] += bundleKg(b.bottom2.dia, bundles12(nosBottom2));
-      summary[b.top1.dia] += bundleKg(b.top1.dia, nosTop1);
-      summary[b.top2.dia] += bundleKg(b.top2.dia, bundles12(nosTop2));
-      summary[b.ex1.dia] += bundleKg(b.ex1.dia, ex1Bundles);
-      summary[b.ex2.dia] += bundleKg(b.ex2.dia, ex2Bundles);
-
-      const stirrupQty =
-        Math.floor((mainFt * 12) / (parseFloat(b.spacing) || 6)) + 1;
-      const stirrupLenM = STIRRUP_CUTTING_FT / FEET_TO_METER;
-      summary[b.stirrupDia] +=
-        stirrupQty * stirrupLenM * (UNIT_WEIGHTS[b.stirrupDia] ?? 0.395);
+      const stirrupQty = Math.floor((mainFt * 12) / (parseFloat(b.spacing) || 6)) + 1;
+      const stirrupWeight = (stirrupQty * (STIRRUP_CUTTING_FT / FEET_TO_METER)) * (UNIT_WEIGHTS[b.stirrupDia] || 0.395);
+      summary[b.stirrupDia] += stirrupWeight;
     });
 
     return summary;
@@ -126,23 +120,22 @@ const UniqDesignsBBS: React.FC = () => {
     setBeams((prev) =>
       prev.map((beam) => {
         if (beam.id !== id) return beam;
+        const newB = JSON.parse(JSON.stringify(beam));
         if (path.includes('.')) {
           const [key, field] = path.split('.');
-          const subKey = key as 'bottom1' | 'bottom2' | 'top1' | 'top2' | 'ex1' | 'ex2';
-          const sub = { ...beam[subKey] };
-          if (field === 'dia') sub.dia = val as number;
-          else sub.nos = String(val);
-          return { ...beam, [subKey]: sub };
+          newB[key][field] = val;
+        } else {
+          newB[path] = val;
         }
-        return { ...beam, [path]: val };
+        return newB;
       })
     );
   };
 
   const shareWA = () => {
-    let msg = `*${APP_TITLE}*\n\n`;
+    let msg = `*${APP_TITLE} SUMMARY*\n\n`;
     (Object.entries(totals) as [string, number][]).forEach(([dia, kg]) => {
-      if (kg > 0) msg += `${dia}mm: ${kg.toFixed(2)} KG\n`;
+      if (kg > 0) msg += `✅ ${dia}mm: ${kg.toFixed(2)} KG\n`;
     });
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -330,7 +323,6 @@ const UniqDesignsBBS: React.FC = () => {
         </div>
       </footer>
 
-      {/* Printable report for PDF (Save as PDF in print dialog) */}
       <div
         ref={printRef}
         className="print-only"
@@ -454,162 +446,33 @@ const Stat: React.FC<{ label: string; val: number }> = ({ label, val }) => (
 );
 
 const styles: Record<string, CSSProperties> = {
-  container: {
-    maxWidth: '500px',
-    margin: '0 auto',
-    background: '#f4f7f9',
-    minHeight: '100vh',
-    padding: '10px 10px 120px',
-    fontFamily: 'sans-serif',
-  },
-  header: {
-    background: '#0d6efd',
-    color: 'white',
-    padding: '15px',
-    borderRadius: '12px',
-    textAlign: 'center',
-    marginBottom: '15px',
-  },
+  container: { maxWidth: '500px', margin: '0 auto', background: '#f4f7f9', minHeight: '100vh', padding: '10px 10px 120px', fontFamily: 'sans-serif' },
+  header: { background: '#0d6efd', color: 'white', padding: '15px', borderRadius: '12px', textAlign: 'center' as const, marginBottom: '15px' },
   title: { margin: '0 0 10px', fontSize: '20px' },
   btnRow: { display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' },
-  waBtn: {
-    background: '#25D366',
-    color: 'white',
-    border: 'none',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    fontWeight: 'bold',
-    fontSize: '10px',
-    cursor: 'pointer',
-  },
-  pdfBtn: {
-    background: '#6c757d',
-    color: 'white',
-    border: 'none',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    fontWeight: 'bold',
-    fontSize: '10px',
-    cursor: 'pointer',
-  },
-  clearBtn: {
-    background: '#dc3545',
-    color: 'white',
-    border: 'none',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    fontWeight: 'bold',
-    fontSize: '10px',
-    cursor: 'pointer',
-  },
-  card: {
-    background: '#fff',
-    borderRadius: '15px',
-    padding: '15px',
-    marginBottom: '15px',
-    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-  },
+  waBtn: { background: '#25D366', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' },
+  pdfBtn: { background: '#6c757d', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' },
+  clearBtn: { background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' },
+  card: { background: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '15px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' },
   cardHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '12px' },
-  gridIn: {
-    border: 'none',
-    borderBottom: '2px solid #0d6efd',
-    fontWeight: 'bold',
-    fontSize: '16px',
-    width: '70px',
-    outline: 'none',
-  },
-  remBtn: {
-    color: '#dc3545',
-    border: 'none',
-    background: 'none',
-    fontWeight: 'bold',
-    fontSize: '10px',
-    cursor: 'pointer',
-  },
-  row3: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '8px',
-    marginBottom: '12px',
-  },
-  fBox: {
-    background: '#f8fafc',
-    padding: '6px',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-  },
-  fLabel: {
-    fontSize: '8px',
-    fontWeight: 'bold',
-    color: '#64748b',
-    display: 'block',
-  },
-  fIn: {
-    width: '100%',
-    border: 'none',
-    background: 'none',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    outline: 'none',
-  },
-  fSel: {
-    width: '100%',
-    border: 'none',
-    background: 'none',
-    fontWeight: 'bold',
-    outline: 'none',
-  },
-  sec: {
-    padding: '10px',
-    borderRadius: '10px',
-    marginBottom: '10px',
-  },
+  gridIn: { border: 'none', borderBottom: '2px solid #0d6efd', fontWeight: 'bold', fontSize: '16px', width: '70px', outline: 'none' },
+  remBtn: { color: '#dc3545', border: 'none', background: 'none', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' },
+  row3: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' },
+  fBox: { background: '#f8fafc', padding: '6px', borderRadius: '8px', border: '1px solid #e2e8f0' },
+  fLabel: { fontSize: '8px', fontWeight: 'bold', color: '#64748b', display: 'block' },
+  fIn: { width: '100%', border: 'none', background: 'none', fontWeight: 'bold', textAlign: 'center' as const, outline: 'none' },
+  fSel: { width: '100%', border: 'none', background: 'none', fontWeight: 'bold', outline: 'none' },
+  sec: { padding: '10px', borderRadius: '10px', marginBottom: '10px' },
   secT: { fontSize: '9px', fontWeight: 'bold', marginBottom: '6px' },
   row2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' },
-  pair: {
-    display: 'flex',
-    background: '#fff',
-    borderRadius: '6px',
-    border: '1px solid #cbd5e1',
-    overflow: 'hidden',
-  },
-  sel: {
-    border: 'none',
-    background: '#f1f5f9',
-    fontSize: '12px',
-    padding: '4px',
-  },
-  nosIn: {
-    width: '100%',
-    border: 'none',
-    textAlign: 'center',
-    fontWeight: 'bold',
-    outline: 'none',
-  },
-  addBtn: {
-    width: '100%',
-    padding: '14px',
-    borderRadius: '12px',
-    background: '#fff',
-    border: '2px dashed #0d6efd',
-    color: '#0d6efd',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  footer: {
-    position: 'fixed',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    background: '#0d6efd',
-    color: 'white',
-    padding: '15px',
-    borderRadius: '20px 20px 0 0',
-    zIndex: 100,
-  },
-  fTitle: { textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px' },
+  pair: { display: 'flex', background: '#fff', borderRadius: '6px', border: '1px solid #cbd5e1', overflow: 'hidden' },
+  sel: { border: 'none', background: '#f1f5f9', fontSize: '12px', padding: '4px' },
+  nosIn: { width: '100%', border: 'none', textAlign: 'center' as const, fontWeight: 'bold', outline: 'none' },
+  addBtn: { width: '100%', padding: '14px', borderRadius: '12px', background: '#fff', border: '2px dashed #0d6efd', color: '#0d6efd', fontWeight: 'bold', cursor: 'pointer' },
+  footer: { position: 'fixed' as const, bottom: 0, left: 0, right: 0, background: '#0d6efd', color: 'white', padding: '15px', borderRadius: '20px 20px 0 0', zIndex: 100 },
+  fTitle: { textAlign: 'center' as const, fontSize: '11px', fontWeight: 'bold', marginBottom: '8px' },
   statRow: { display: 'flex', justifyContent: 'space-around' },
-  sBox: { textAlign: 'center' },
+  sBox: { textAlign: 'center' as const },
   sLab: { fontSize: '10px', opacity: 0.8 },
   sVal: { fontSize: '20px', fontWeight: 'bold' },
 };
