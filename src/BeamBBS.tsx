@@ -49,7 +49,7 @@ const UNIT_WEIGHTS: Record<number, number> = {
 const FEET_TO_METER = 3.281;
 const STIRRUP_CUTTING_FT = 3.5; // Excel: 8mm stirrups Cutting Length in Ft.
 
-const APP_TITLE = 'UNIQ DESIGNS RENAMED OF BEAM BBS';
+const APP_TITLE = 'BEAM BBS';
 
 const UniqDesignsBBS: React.FC = () => {
   const initialBeam = (id: number): Beam => ({
