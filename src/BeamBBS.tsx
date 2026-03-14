@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, CSSProperties } from 'react';
 
 /**
- * UNIQ DESIGNS RENAMED OF BEAM BBS
+ * BEAM BBS
  * Logic matches Excel "Steel Calculation Automation":
  * - Main bars: Required Bundles × Weight of one bundle (56.88 kg for 16mm, 53.35 kg for 12mm).
  * - Extra bars: bundles = nos × (exFt/mainFt) for col1, nos × (exFt/mainFt)×0.6 for col2.
