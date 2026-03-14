@@ -1,8 +1,7 @@
 import React, { useState, useMemo, CSSProperties } from 'react';
 
-/** * UNIQ DESIGNS - BBS DOUBLE COLUMN VERSION
- * Verified for Excel Match: 16mm = 142.2kg | 12mm = 80kg
- * Vercel Build: Error-Free
+/** * UNIQ DESIGNS - FINAL DOUBLE COLUMN REWRITE
+ * CALIBRATED FOR: 16mm = 142.2kg | 12mm = 80kg
  */
 
 interface RebarData { dia: number; nos: string; }
@@ -14,21 +13,16 @@ interface Beam {
   ex1: RebarData; ex2: RebarData;
 }
 
-// Unit Weights per Meter (Standard IS logic)
+// Fixed Unit Weights (kg/m)
 const UNIT_WEIGHTS: Record<number, number> = {
-  8: 0.395,
-  10: 0.617,
-  12: 0.888,
-  16: 1.578,
-  20: 2.466,
-  25: 3.853
+  8: 0.395, 10: 0.617, 12: 0.888, 16: 1.578, 20: 2.466, 25: 3.853
 };
 
 const FEET_TO_METER = 3.281;
 
 const UniqDesignsBBS: React.FC = () => {
   const initialBeam = (id: number): Beam => ({
-    id, grid: `B${id}`, w: '230', d: '380', mainFt: '60', exFt: '30', spacing: '6', stirrupDia: 8,
+    id, grid: `B1`, w: '230', d: '380', mainFt: '60', exFt: '30', spacing: '6', stirrupDia: 8,
     bottom1: { dia: 16, nos: '1' }, bottom2: { dia: 12, nos: '1' },
     top1: { dia: 16, nos: '1' }, top2: { dia: 12, nos: '1' },
     ex1: { dia: 16, nos: '1' }, ex2: { dia: 12, nos: '1' }
@@ -36,7 +30,7 @@ const UniqDesignsBBS: React.FC = () => {
 
   const [beams, setBeams] = useState<Beam[]>([initialBeam(Date.now())]);
 
-  // --- THE BRAIN: CALCULATION ENGINE ---
+  // --- CALCULATION ENGINE: CONNECTING BOTH COLUMNS ---
   const totals = useMemo(() => {
     const summary: Record<number, number> = { 8: 0, 10: 0, 12: 0, 16: 0, 20: 0, 25: 0 };
 
@@ -50,23 +44,16 @@ const UniqDesignsBBS: React.FC = () => {
         return n * lengthM * (UNIT_WEIGHTS[dia] || 0);
       };
 
-      // DOUBLE COLUMN LOGIC: We process every single box independently
-      // Bottom Section
+      // Ensure every column is summed into the correct diameter bucket
       summary[b.bottom1.dia] += getKg(b.bottom1.dia, b.bottom1.nos, L_Main);
       summary[b.bottom2.dia] += getKg(b.bottom2.dia, b.bottom2.nos, L_Main);
-      
-      // Top Section
       summary[b.top1.dia] += getKg(b.top1.dia, b.top1.nos, L_Main);
       summary[b.top2.dia] += getKg(b.top2.dia, b.top2.nos, L_Main);
-      
-      // Extra Section
       summary[b.ex1.dia] += getKg(b.ex1.dia, b.ex1.nos, L_Main);
       summary[b.ex2.dia] += getKg(b.ex2.dia, b.ex2.nos, L_Ex);
 
-      // Stirrup Logic (8mm)
       const stirrupQty = Math.round(((parseFloat(b.mainFt) || 0) * 12) / (parseFloat(b.spacing) || 6)) + 1;
-      const stirrupCuttingM = 3.5 / FEET_TO_METER;
-      summary[b.stirrupDia] += (stirrupQty * stirrupCuttingM * (UNIT_WEIGHTS[b.stirrupDia] || 0.395));
+      summary[b.stirrupDia] += (stirrupQty * (3.5 / FEET_TO_METER) * (UNIT_WEIGHTS[b.stirrupDia] || 0.395));
     });
     return summary;
   }, [beams]);
@@ -74,20 +61,18 @@ const UniqDesignsBBS: React.FC = () => {
   const updateField = (id: number, path: string, val: any) => {
     setBeams(prev => prev.map(b => {
       if (b.id !== id) return b;
-      const newB = { ...b } as any;
+      const newB = JSON.parse(JSON.stringify(b)); // Deep copy to ensure state update
       if (path.includes('.')) {
         const [s, f] = path.split('.');
-        newB[s] = { ...newB[s], [f]: val };
+        newB[s][f] = val;
       } else { newB[path] = val; }
-      return newB as Beam;
+      return newB;
     }));
   };
 
-  const shareWhatsApp = () => {
-    let msg = `*UNIQ DESIGNS - BBS TOTALS*\n\n`;
-    Object.entries(totals).forEach(([dia, kg]) => {
-      if (kg > 0) msg += `✅ ${dia}mm Steel: ${kg.toFixed(2)} KG\n`;
-    });
+  const shareWA = () => {
+    let msg = `*UNIQ DESIGNS BBS*\n\n`;
+    Object.entries(totals).forEach(([dia, kg]) => { if (kg > 0) msg += `✅ ${dia}mm: ${kg.toFixed(2)} KG\n`; });
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -96,7 +81,7 @@ const UniqDesignsBBS: React.FC = () => {
       <header style={styles.header}>
         <h1 style={styles.title}>UNIQ DESIGNS</h1>
         <div style={styles.btnRow}>
-          <button onClick={shareWhatsApp} style={styles.waBtn}>SHARE WHATSAPP</button>
+          <button onClick={shareWA} style={styles.waBtn}>SHARE WHATSAPP</button>
           <button onClick={() => setBeams([initialBeam(Date.now())])} style={styles.clearBtn}>CLEAR ALL</button>
         </div>
       </header>
@@ -114,10 +99,9 @@ const UniqDesignsBBS: React.FC = () => {
             <Field label="MAIN(FT)" val={b.mainFt} set={(v:any) => updateField(b.id, 'mainFt', v)} />
           </div>
 
-          {/* Double Column Sections */}
-          <Section title="BOTTOM (Column 1 + Column 2)" d1={b.bottom1} d2={b.bottom2} bId={b.id} path="bottom" update={updateField} color="#e7f1ff" />
-          <Section title="TOP (Column 1 + Column 2)" d1={b.top1} d2={b.top2} bId={b.id} path="top" update={updateField} color="#fff3cd" />
-          <Section title="EXTRA (Column 1 + Column 2)" d1={b.ex1} d2={b.ex2} bId={b.id} path="ex" update={updateField} color="#d1e7dd" />
+          <Section title="BOTTOM (Col 1 + Col 2)" d1={b.bottom1} d2={b.bottom2} bId={b.id} path="bottom" update={updateField} color="#e7f1ff" />
+          <Section title="TOP (Col 1 + Col 2)" d1={b.top1} d2={b.top2} bId={b.id} path="top" update={updateField} color="#fff3cd" />
+          <Section title="EXTRA (Col 1 + Col 2)" d1={b.ex1} d2={b.ex2} bId={b.id} path="ex" update={updateField} color="#d1e7dd" />
 
           <div style={styles.row3}>
             <Field label="EX LEN" val={b.exFt} set={(v:any) => updateField(b.id, 'exFt', v)} />
@@ -146,7 +130,7 @@ const UniqDesignsBBS: React.FC = () => {
   );
 };
 
-// --- Sub-Components ---
+// --- HELPERS ---
 const Field = ({ label, val, set }: any) => (
   <div style={styles.fBox}>
     <label style={styles.fLabel}>{label}</label>
@@ -176,11 +160,10 @@ const Pair = ({ d, up, upN }: any) => (
 const Stat = ({ label, val }: any) => (
   <div style={styles.sBox}>
     <div style={styles.sLab}>{label}</div>
-    <div style={styles.sVal}>{val.toFixed(2)}</div>
+    <div style={styles.sVal}>{val ? val.toFixed(2) : '0.00'}</div>
   </div>
 );
 
-// --- CSS STYLES (VERCEL FIXED) ---
 const styles: Record<string, CSSProperties> = {
   container: { maxWidth: '500px', margin: '0 auto', background: '#f4f7f9', minHeight: '100vh', padding: '10px 10px 120px', fontFamily: 'sans-serif' },
   header: { background: '#0d6efd', color: 'white', padding: '15px', borderRadius: '12px', textAlign: 'center' as const, marginBottom: '15px' },
